@@ -77,6 +77,16 @@ export class FileSystem {
     return { ...this.files };
   }
 
+  exportState(): { files: FileMap, metadata: FileMetadata } {
+    return { files: { ...this.files }, metadata: { ...this.metadata } };
+  }
+
+  importState(state: { files: FileMap, metadata: FileMetadata }) {
+    this.files = state.files;
+    this.metadata = state.metadata;
+    this.saveToStorage();
+  }
+
   clear() {
     this.files = {};
     this.metadata = {};
@@ -85,31 +95,18 @@ export class FileSystem {
   }
 
   findFileByReference(ref: string): string | null {
-    const normalizedRef = ref.toLowerCase().trim();
-    
-    // 1. Exact match
     if (this.exists(ref)) return ref;
     if (this.exists(ref + '.txt')) return ref + '.txt';
     
-    // 2. Match by display name (case-insensitive)
+    // Try to find by display name
     for (const [filename, meta] of Object.entries(this.metadata)) {
-      if (meta.displayName.toLowerCase().trim() === normalizedRef) return filename;
+      if (meta.displayName === ref) return filename;
     }
     
-    // 3. Match by filename without extension
+    // Try partial match
+    const refLower = ref.toLowerCase();
     for (const filename of Object.keys(this.files)) {
-      const nameOnly = filename.replace(/\.txt$/, '').toLowerCase().replace(/_/g, ' ');
-      if (nameOnly === normalizedRef) return filename;
-    }
-
-    // 4. Partial match on display name
-    for (const [filename, meta] of Object.entries(this.metadata)) {
-      if (meta.displayName.toLowerCase().includes(normalizedRef)) return filename;
-    }
-
-    // 5. Partial match on filename
-    for (const filename of Object.keys(this.files)) {
-      if (filename.toLowerCase().includes(normalizedRef)) return filename;
+      if (filename.toLowerCase().includes(refLower)) return filename;
     }
     
     return null;

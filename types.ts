@@ -28,9 +28,10 @@ export interface CheckDef {
 export interface AIResponse {
   narrative: string;
   updates?: UpdateItem[];
-  files?: { [filename: string]: FileData | string };
+  files?: { [filename: string]: FileData | string | null };
   checks?: CheckDef[];
   gameOver?: boolean;
+  recommendations?: string[];
 }
 
 export interface Message {
@@ -42,4 +43,5 @@ export interface NarrativeEntry {
   id: string;
   text: string;
   type: 'system' | 'user' | 'ai';
+  recommendations?: string[];
 }
