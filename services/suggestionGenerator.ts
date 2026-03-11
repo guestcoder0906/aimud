@@ -274,7 +274,7 @@ export class SuggestionGenerator {
 
             const charTemplates = [
                 () => `A ${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)} ${getRandomCompatible(traits, theme)} ${getRandomCompatible(backgrounds, theme)}`,
-                () => `${getRandomCompatible(adjectives, theme).toUpperCase()} ${getRandomCompatible(classes, theme).toUpperCase()}`,
+                () => `${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)}`,
                 () => `A ${getRandomCompatible(classes, theme)} ${getRandomCompatible(backgrounds, theme)}`
             ];
 
@@ -313,7 +313,7 @@ export class SuggestionGenerator {
                 () => `A high-stakes adventure in ${getRandomCompatible(settings, theme)} featuring ${getRandomCompatible(creatures, theme)}.`,
                 () => `Conflict in ${getRandomCompatible(names, theme)} between ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(creatures, theme)}.`,
                 // Shorter phrases
-                () => `${getRandomCompatible(adjectives, theme).toUpperCase()} ${getRandomCompatible(names, theme).toUpperCase()}`,
+                () => `${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(names, theme)}`,
                 () => `${getRandomCompatible(settings, theme)} plagued by ${getRandomCompatible(dangers, theme)}`,
                 () => `Journey to ${getRandomCompatible(settings, theme)}`,
                 () => `The ${getRandomCompatible(creatures, theme)} of ${getRandomCompatible(names, theme)}`,
