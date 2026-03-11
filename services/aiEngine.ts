@@ -124,6 +124,7 @@ CRITICAL FILE MANAGEMENT RULES:
   * Use hide[Secret Room] or target(PlayerName)[Secret Room] for area names if they are forgotten, hidden or only known to specific players.
   * Ensure scaling and coordinates are consistent.
 - Create character files named "CharacterName-USERNAME.txt" for each player using the ENTITY FILE SCHEMA.
+- ONE CHARACTER PER PLAYER (CRITICAL): Each username MUST have exactly one character file. NEVER create a second character file for the same username. Only create a file if NO file ending in "-USERNAME.txt" exists for that player. If they describe a new character, update the existing file or ignore it if it violates the one-character-per-account rule.
 - CRITICAL: If a player's health reaches 0 or they die, DELETE their character file immediately by setting it to null in the files object.
 - Create "WorldTime.txt" with ACTUAL date/time/year appropriate for the world setting.
 - Create files for EVERY entity that appears: NPCs, items, locations, vehicles, projectiles. MUST follow ENTITY FILE SCHEMA.
@@ -277,7 +278,7 @@ CRITICAL REMINDER:
 6. NO VAGUE MAGIC: Any spell, superpower, or supernatural ability MUST be strictly documented with limits (e.g., max weight 5 lbs, max range 10m), strict energy costs per use, and exact constraints. "Vague magic" is rejected.
 7. FILE MINIMIZATION (CRITICAL): Do NOT re-include files in 'files' if their content has NOT changed. Only include files that are NEW, MODIFIED, or DELETED. Repeating unchanged files wastes resources.
 8. MAP POSITION UPDATE (CRITICAL): You MUST update CurrentMap.json in EVERY response. The SPATIAL CONTEXT above shows exact distances — use those numbers. If the player interacts with anything, move them to the appropriate position. If they are too far, move them toward it by their speed × time. Always update facing direction.${mapScreenshot ? '\n9. A screenshot of the current map is attached. Use it to visually verify spatial consistency.' : ''}
-${username ? `${mapScreenshot ? '10' : '9'}. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
+${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. If NO file ends in "-${username}.txt", you MUST create the character file immediately using the ENTITY FILE SCHEMA. If one ALREADY EXISTS, do NOT create another one.` : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot);
 
