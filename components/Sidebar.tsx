@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { UpdateItem } from '../types';
 import { FileSystem } from '../services/fileSystem';
 import { FileText, ChevronRight, ChevronDown, Activity, Settings, RefreshCw, Users, LogOut, Play, Map as MapIcon } from 'lucide-react';
-import MapPanel from './MapPanel';
+import MapPanel, { MapPanelHandle } from './MapPanel';
 
 interface SidebarProps {
   files: string[];
@@ -25,6 +25,7 @@ interface SidebarProps {
   onHostClick: () => void;
   onJoinClick: () => void;
   syncCount: number;
+  mapPanelRef: React.RefObject<MapPanelHandle | null>;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -47,7 +48,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleAutoRecommendations,
   onHostClick,
   onJoinClick,
-  syncCount
+  syncCount,
+  mapPanelRef
 }) => {
 
   const [activeTab, setActiveTab] = useState<'files' | 'map'>('files');
@@ -248,11 +250,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               );
             })}
           </div>
-        ) : (
-          <div className="flex-1 overflow-hidden">
-            <MapPanel fileSystem={fileSystem} files={files} username={username} debugMode={debugMode} syncCount={syncCount} />
+        ) : null}
+          <div className={`flex-1 overflow-hidden ${activeTab !== 'map' ? 'h-0 overflow-hidden absolute' : ''}`}>
+            <MapPanel ref={mapPanelRef} fileSystem={fileSystem} files={files} username={username} debugMode={debugMode} syncCount={syncCount} />
           </div>
-        )}
       </div>
 
       {/* Status Section */}

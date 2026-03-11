@@ -3,6 +3,7 @@ import { AIEngine } from './services/aiEngine';
 import { FileSystem } from './services/fileSystem';
 import { NarrativeEntry, UpdateItem } from './types';
 import Sidebar from './components/Sidebar';
+import { MapPanelHandle } from './components/MapPanel';
 import NarrativeWindow from './components/NarrativeWindow';
 import InputArea from './components/InputArea';
 import Modal from './components/Modal';
@@ -54,6 +55,7 @@ function App() {
   const processingCountRef = useRef(0);
   const [showCharacterCreation, setShowCharacterCreation] = useState(false);
   const [characterDescription, setCharacterDescription] = useState('');
+  const mapPanelRef = useRef<MapPanelHandle>(null);
 
   const updateProcessing = (delta: number) => {
     processingCountRef.current = Math.max(0, processingCountRef.current + delta);
@@ -314,7 +316,9 @@ function App() {
           result = await aiEngine.initialize(text, username || 'Player');
           setIsInitialized(true);
         } else {
-          result = await aiEngine.processAction(text, username || 'Player');
+          // Capture map screenshot for spatial context
+          const mapScreenshot = await mapPanelRef.current?.captureScreenshot() || undefined;
+          result = await aiEngine.processAction(text, username || 'Player', mapScreenshot);
         }
 
         if (result) {
@@ -520,6 +524,7 @@ function App() {
         onHostClick={() => setShowMultiplayerModal('host')}
         onJoinClick={() => setShowMultiplayerModal('join')}
         syncCount={syncCount}
+        mapPanelRef={mapPanelRef}
       />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">

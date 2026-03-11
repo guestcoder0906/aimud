@@ -132,6 +132,40 @@ CRITICAL FILE MANAGEMENT RULES:
 - Track unique instances: [ObjectType_ID(status)]
 - Status effects: [Status:Type_ID(Expires: TIME)]
 
+SPATIAL CONSISTENCY RULE (CRITICAL):
+- The 'scale' property in CurrentMap.json defines the real-world size of the map viewport (e.g., "50m" means the map represents a 50-meter area). All coordinates in CurrentMap.json are in METERS relative to this scale.
+- ALL ranges, distances, and dimensions MUST be consistent across character files and CurrentMap.json:
+  * If a spell has "Range 30m", the caster and target MUST be within 30 coordinate units of each other on the map.
+  * If a character has "Speed: Walking 1.5m/s" and 10 seconds pass, they move AT MOST 15 coordinate units on the map.
+  * If an area-of-effect ability has "Radius 10m", the corresponding map area MUST have radius=10 or width/height=20.
+  * If a character has "Melee range: 2m", targets MUST be within 2 coordinate units.
+
+MANDATORY MOVEMENT & MAP UPDATE RULE (CRITICAL — READ CAREFULLY):
+- YOU MUST UPDATE CurrentMap.json IN EVERY SINGLE RESPONSE. There is no valid response where the player does something and the map stays unchanged. Even "looking around" changes facing direction.
+- EVERY action the player takes implies physical presence. If they attack, interact, talk to, pick up, use, examine closely, or engage with ANY entity, they MUST be physically close enough on the map. Check the distance FIRST.
+- AUTO-APPROACH BEHAVIOR: When a player attempts to interact with something out of range (attack, talk to NPC, pick up item, open door, etc.):
+  1. Calculate Euclidean distance from player position to target: sqrt((x2-x1)^2 + (y2-y1)^2).
+  2. If the player is OUT OF RANGE for the interaction:
+     a. Calculate max distance the player can move this turn: speed × time_cost_of_action.
+     b. Move the player TOWARD the target along the direct line by that distance (or less if it reaches interaction range).
+     c. New position: newX = oldX + (targetX - oldX) * (moveDistance / totalDistance), newY = oldY + (targetY - oldY) * (moveDistance / totalDistance).
+     d. If after moving they are now in range, the interaction SUCCEEDS and narrate the approach + action.
+     e. If after moving they are STILL out of range, narrate that they moved toward it but couldn't reach it yet. The action is INCOMPLETE.
+  3. If the player IS in range, the interaction happens but you MUST STILL update their facing direction toward the target.
+  4. NEVER allow an interaction to succeed while the player's map position stays far from the target. This is the #1 bug to avoid.
+- When processing ANY action involving distance (movement, attacks, spells, effects, thrown objects, projectiles, sight, hearing), you MUST:
+  1. Calculate the actual coordinate distance between source and target on the map using Euclidean distance.
+  2. Compare it against the declared range/speed from the character's file.
+  3. Apply the AUTO-APPROACH behavior above if out of range.
+  4. Update CurrentMap.json positions to reflect the actual distance moved/affected.
+- NPC MOVEMENT: NPCs also move! If an NPC attacks or approaches the player, update the NPC's position in the 'areas' array too. NPCs should not stay static when they are engaging in combat or moving.
+- FACING DIRECTION: Always update the player's 'facing' angle to point toward whatever they are interacting with. facing = atan2(targetY - playerY, targetX - playerX) * 180 / PI.
+- VISION & DETECTION: Player vision ranges (detailedRange, maxRange) in CurrentMap.json MUST match perception abilities. NPCs beyond maxRange should NOT be visible on the map.
+- When generating or updating CurrentMap.json: cross-reference EVERY coordinate against the scale. A room described as "10m x 10m" MUST have width=10, height=10 in coordinates.
+- NEVER place entities at arbitrary large coordinates that don't match the scale. If the map is 50m scale, most coordinates should be within a 0-50 range.
+- Movement MUST be calculated step by step: distance = speed × time_elapsed. The player's new (x, y) position must be exactly that distance from their old position, in the direction of movement.
+- A screenshot of the current map state will be attached to requests. Use it to visually verify spatial consistency — if something looks wrong on the screenshot (entities overlapping, wildly spread out, out of bounds), FIX it in your CurrentMap.json update.
+
 FILE REFERENCE SYNTAX:
 Use [DisplayName] or [FileName] in narrative text - these become clickable links to files
 Examples: [character-John], [King's Guard], [Iron Sword], [Old Church]
@@ -209,7 +243,7 @@ export class AIEngine {
     });
   }
 
-  async processAction(action: string, username?: string): Promise<AIResponse | null> {
+  async processAction(action: string, username?: string, mapScreenshot?: string): Promise<AIResponse | null> {
     return new Promise((resolve) => {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
@@ -236,9 +270,10 @@ CRITICAL REMINDER:
 5. Ensure all stats use the new dynamic probability engine modifier format.
 6. NO VAGUE MAGIC: Any spell, superpower, or supernatural ability MUST be strictly documented with limits (e.g., max weight 5 lbs, max range 10m), strict energy costs per use, and exact constraints. "Vague magic" is rejected.
 7. FILE MINIMIZATION (CRITICAL): Do NOT re-include files in 'files' if their content has NOT changed. Only include files that are NEW, MODIFIED, or DELETED. Repeating unchanged files wastes resources.
-${username ? `8. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
+8. MAP POSITION UPDATE (CRITICAL): You MUST update CurrentMap.json in EVERY response. If the player performs ANY physical action (attack, move, interact, pick up, open, talk), their (x, y) position and facing direction MUST change on the map. If a target is out of range, AUTO-MOVE the player toward it (distance = speed × time). Never let an interaction succeed with the player still far away on the map.${mapScreenshot ? '\n9. A screenshot of the current map is attached. Use it to visually verify that your CurrentMap.json updates are spatially consistent with what you see.' : ''}
+${username ? `${mapScreenshot ? '10' : '9'}. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
 
-          const res = await this.handleRequest(prompt);
+          const res = await this.handleRequest(prompt, mapScreenshot);
           resolve(res);
         } catch (e) {
           console.error("Processing failed", e);
@@ -248,9 +283,9 @@ ${username ? `8. If a character file for "${username}" does not exist, you MUST 
     });
   }
 
-  private async handleRequest(userPrompt: string): Promise<AIResponse | null> {
+  private async handleRequest(userPrompt: string, mapScreenshot?: string): Promise<AIResponse | null> {
     // Phase 1: Analyze/Execute
-    let responseText = await this.callAI(userPrompt);
+    let responseText = await this.callAI(userPrompt, mapScreenshot);
     let data: AIResponse;
 
     try {
@@ -440,11 +475,32 @@ ${username ? `8. If a character file for "${username}" does not exist, you MUST 
     }
   }
 
-  private async callAI(prompt: string): Promise<string> {
+  private async callAI(prompt: string, mapScreenshot?: string): Promise<string> {
     try {
+      // Build contents with optional map screenshot for multimodal context
+      let contents: any;
+      if (mapScreenshot) {
+        contents = [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: 'image/png',
+                  data: mapScreenshot
+                }
+              }
+            ]
+          }
+        ];
+      } else {
+        contents = prompt;
+      }
+
       const response = await this.ai.models.generateContent({
         model: 'gemini-3.1-flash-lite-preview',
-        contents: prompt,
+        contents: contents,
         config: {
           systemInstruction: SYSTEM_PROMPT,
           responseMimeType: 'application/json',

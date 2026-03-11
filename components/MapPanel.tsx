@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useImperativeHandle, forwardRef } from 'react';
 import { FileSystem } from '../services/fileSystem';
 
 interface MapPanelProps {
@@ -9,9 +9,66 @@ interface MapPanelProps {
   syncCount: number;
 }
 
-export default function MapPanel({ fileSystem, files, username, debugMode, syncCount }: MapPanelProps) {
+export interface MapPanelHandle {
+  captureScreenshot: () => Promise<string | null>;
+}
+
+const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files, username, debugMode, syncCount }, ref) => {
   const [mapData, setMapData] = useState<any>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    captureScreenshot: async () => {
+      const svgEl = svgRef.current;
+      if (!svgEl) return null;
+
+      try {
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(svgEl);
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+
+        const loaded = await new Promise<boolean>((resolve) => {
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(false);
+          img.src = url;
+        });
+
+        if (!loaded) {
+          URL.revokeObjectURL(url);
+          return null;
+        }
+
+        const canvas = document.createElement('canvas');
+        // Use a reasonable resolution for the AI to read
+        canvas.width = 800;
+        canvas.height = 600;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          return null;
+        }
+
+        // Draw black background
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        URL.revokeObjectURL(url);
+        // Return base64 data without the data:image/png;base64, prefix
+        const dataUrl = canvas.toDataURL('image/png');
+        return dataUrl.split(',')[1] || null;
+      } catch (e) {
+        console.error('Failed to capture map screenshot:', e);
+        return null;
+      }
+    }
+  }));
+
 
   useEffect(() => {
     const content = fileSystem.read('CurrentMap.json');
@@ -248,6 +305,7 @@ export default function MapPanel({ fileSystem, files, username, debugMode, syncC
       </div>
 
       <svg
+        ref={svgRef}
         className="w-full h-full"
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
@@ -395,4 +453,6 @@ export default function MapPanel({ fileSystem, files, username, debugMode, syncC
       </svg>
     </div>
   );
-}
+});
+
+export default MapPanel;
