@@ -133,12 +133,17 @@ CRITICAL FILE MANAGEMENT RULES:
 - Status effects: [Status:Type_ID(Expires: TIME)]
 
 SPATIAL CONSISTENCY RULE (CRITICAL):
-- The 'scale' property in CurrentMap.json defines the real-world size of the map viewport (e.g., "50m" means the map represents a 50-meter area). All coordinates in CurrentMap.json are in METERS relative to this scale.
-- ALL ranges, distances, and dimensions MUST be consistent across character files and CurrentMap.json:
-  * If a spell has "Range 30m", the caster and target MUST be within 30 coordinate units of each other on the map.
-  * If a character has "Speed: Walking 1.5m/s" and 10 seconds pass, they move AT MOST 15 coordinate units on the map.
-  * If an area-of-effect ability has "Radius 10m", the corresponding map area MUST have radius=10 or width/height=20.
-  * If a character has "Melee range: 2m", targets MUST be within 2 coordinate units.
+- Scale coherence: All coordinates in CurrentMap.json are in METERS relative to the 'scale' property.
+- Range Enforcement (MANDATORY): No physical action (melee, ranged, gear usage) can succeed if the distance to the target exceeds the range defined in the object's file.
+  * Melee: 1–3m range.
+  * Ranged/Projectiles: Range must be defined in meters (e.g., Bow: 60m).
+- PROJECTILE LOGIC:
+  * When firing a projectile (bullet, arrow, spell bolt), you MUST calculate travel time: time = distance / velocity.
+  * If travel time is > 1.0s, the projectile must be created as an entry in CurrentMap.json 'areas' with type='projectile' and its current (x, y) coordinates.
+  * Update the projectile's position in subsequent responses until impact or miss.
+- SCALE INTEGRITY: A character with 1.5m/s speed moves exactly 15m in 10s. Never allow "teleporting" or magically ignoring scale.
+- Distance Calibration: Use sqrt((x2-x1)^2 + (y2-y1)^2) for ALL range checks.
+- A map screenshot is provided for visual grounding—verify coordinate updates against the visual state.
 
 MANDATORY MOVEMENT & MAP UPDATE RULE (CRITICAL):
 - CurrentMap.json MUST be updated in EVERY response. Any player action implies a physical state change — at minimum, update the player's facing direction.
@@ -151,6 +156,7 @@ MANDATORY MOVEMENT & MAP UPDATE RULE (CRITICAL):
   5. If still out of range → action is incomplete; narrate the partial approach and remaining distance.
 - FACING: Update the player's 'facing' field to point toward the interaction target: facing = atan2(targetY - playerY, targetX - playerX) × 180 / π.
 - NPC & ENTITY MOVEMENT: When NPCs engage in combat, pursue, flee, or patrol, update their (x, y) position in the 'areas' array proportional to their speed × time.
+- PROJECTILE TRACKING: Any active projectile (arrow, bullet, fireball) MUST have its (x, y) updated in CurrentMap.json in every response until it hits or disappears.
 - VISION & DETECTION: Player vision ranges (detailedRange, maxRange) in CurrentMap.json must match perception stats. Entities beyond maxRange must not appear on the map.
 - COORDINATE INTEGRITY: All coordinates must be proportional to the declared map scale. A "10m × 10m" room = width:10, height:10. Never use arbitrary coordinates that violate the scale.
 - A screenshot of the current map may be attached. Use it to visually verify spatial consistency of your response.
@@ -432,14 +438,19 @@ ${username ? `${mapScreenshot ? '10' : '9'}. If a character file for "${username
             }
           }
 
-          // If the closest interactive entity is beyond reasonable interaction range,
+          // Determine the appropriate interaction range for this player
+          const interactionRange = this.getInteractionRange(newPlayer.username) || 3;
+
+          // If the closest interactive entity is beyond their current interaction range,
           // move the player toward it
-          if (closestTarget && closestDist > 3) {
+          if (closestTarget && closestDist > interactionRange) {
             const moveSpeed = this.extractPlayerSpeed(newPlayer.username) || 1.5;
             // Estimate time from WorldTime diff, or use a reasonable default
             const timeCost = this.estimateTimeCost() || 6;
             const maxMove = moveSpeed * timeCost;
-            const moveDistance = Math.min(maxMove, Math.max(0, closestDist - 1.5));
+            
+            // Stop at interaction range
+            const moveDistance = Math.min(maxMove, Math.max(0, closestDist - (interactionRange * 0.8)));
 
             if (moveDistance > 0.5) {
               const ratio = moveDistance / closestDist;
@@ -466,6 +477,29 @@ ${username ? `${mapScreenshot ? '10' : '9'}. If a character file for "${username
     } catch (e) {
       console.error('Spatial consistency enforcement failed', e);
     }
+  }
+
+  /**
+   * Tries to find the current max interaction range for a player (weapon, spell, etc.)
+   */
+  private getInteractionRange(username: string): number | null {
+    if (!username) return null;
+    const files = this.fs.getAll();
+    const uLower = username.toLowerCase();
+
+    for (const [name, content] of Object.entries(files)) {
+      if (!name.toLowerCase().includes(uLower)) continue;
+
+      // Look for range patterns in the character file or equipped items
+      const rangeMatch = content.match(/(?:range|reach|distance)[:\s]*(\d+\.?\d*)\s*m/i);
+      if (rangeMatch) return parseFloat(rangeMatch[1]);
+      
+      // Fallback for melee weapon detection
+      if (content.toLowerCase().includes('sword') || content.toLowerCase().includes('axe') || content.toLowerCase().includes('club')) {
+        return 2;
+      }
+    }
+    return null;
   }
 
   /**
