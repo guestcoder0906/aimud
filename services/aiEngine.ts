@@ -133,30 +133,42 @@ export class AIEngine {
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || storedKey || '' });
   }
 
+  private taskQueue: Promise<any> = Promise.resolve();
+
   async initialize(startingPrompt: string): Promise<AIResponse | null> {
-    try {
-      const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
-      return await this.handleRequest(prompt);
-    } catch (e) {
-      console.error("Initialization failed", e);
-      return { narrative: "System initialization failed. Please check API Key." };
-    }
+    return new Promise((resolve) => {
+      this.taskQueue = this.taskQueue.then(async () => {
+        try {
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
+          const res = await this.handleRequest(prompt);
+          resolve(res);
+        } catch (e) {
+          console.error("Initialization failed", e);
+          resolve({ narrative: "System initialization failed. Please check API Key." });
+        }
+      });
+    });
   }
 
   async processAction(action: string): Promise<AIResponse | null> {
-    try {
-      const files = this.fs.getAll();
-      const context = Object.entries(files)
-        .map(([name, content]) => `=== ${name} ===\n${content}`)
-        .join('\n\n');
+    return new Promise((resolve) => {
+      this.taskQueue = this.taskQueue.then(async () => {
+        try {
+          const files = this.fs.getAll();
+          const context = Object.entries(files)
+            .map(([name, content]) => `=== ${name} ===\n${content}`)
+            .join('\n\n');
 
-      const prompt = `Current files:\n${context}\n\nPlayer action: ${action}\n\nProcess this action. If it requires probability engine calculations (success/failure/damage multiplier), return "checks". If not, return "narrative" and updates. Remember: NO DICE NOTATION. Make all file updates extremely detailed and long. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
+          const prompt = `Current files:\n${context}\n\nPlayer action: ${action}\n\nProcess this action. If it requires probability engine calculations (success/failure/damage multiplier), return "checks". If not, return "narrative" and updates. Remember: NO DICE NOTATION. Make all file updates extremely detailed and long. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
 
-      return await this.handleRequest(prompt);
-    } catch (e) {
-      console.error("Processing failed", e);
-      return { narrative: "Error processing action." };
-    }
+          const res = await this.handleRequest(prompt);
+          resolve(res);
+        } catch (e) {
+          console.error("Processing failed", e);
+          resolve({ narrative: "Error processing action." });
+        }
+      });
+    });
   }
 
   private async handleRequest(userPrompt: string): Promise<AIResponse | null> {

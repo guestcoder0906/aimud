@@ -47,6 +47,7 @@ function App() {
   const [showMultiplayerModal, setShowMultiplayerModal] = useState<'host' | 'join' | null>(null);
   const [multiplayerService, setMultiplayerService] = useState<MultiplayerService | null>(null);
   const [roomState, setRoomState] = useState<any>(null);
+  const roomStateRef = useRef<any>(null);
   const [username, setUsername] = useState<string>(() => {
     return localStorage.getItem('aimud_username') || '';
   });
@@ -92,6 +93,7 @@ function App() {
       fileSystem,
       (state) => {
         setRoomState(state);
+        roomStateRef.current = state;
         setNarrative(state.narrative || []);
         setUpdates(state.updates || []);
         setWorldTime(state.worldTime || '');
@@ -130,12 +132,12 @@ function App() {
             .join('\n');
 
           const newNarrative = [
-            ...(roomState?.narrative || []),
+            ...(roomStateRef.current?.narrative || []),
             { id: Date.now().toString() + 'user', text: formattedPlayersActions, type: 'user' },
             { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }
           ];
           const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
-          const newUpdates = [...safeUpdates, ...(roomState?.updates || [])].slice(0, 50);
+          const newUpdates = [...safeUpdates, ...(roomStateRef.current?.updates || [])].slice(0, 50);
 
           ms.syncState({
             fileSystemState: fileSystem.exportState(),
@@ -153,12 +155,10 @@ function App() {
         setIsProcessing(true);
         const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.`;
         await aiEngine.processAction(prompt);
-        ms.characterCreated(newUsername);
+        // We do NOT call ms.characterCreated(newUsername) here because it causes concurrent race conditions with DB fetch in syncState.
+        // syncState will naturally compute hasCharacter across ALL players correctly using the fresh fileSystem context.
         ms.syncState({
           fileSystemState: fileSystem.exportState(),
-          narrative: roomState?.narrative || [],
-          updates: roomState?.updates || [],
-          gameState: 'playing',
           worldTime: fileSystem.read('WorldTime.txt') || ''
         });
         setIsProcessing(false);

@@ -129,9 +129,11 @@ export class MultiplayerService {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (payload: any) => {
         const newState = payload.new.state;
 
-        // Only import files if we're not the host (Host is the source of truth)
-        // Actually, if we play purely from state, everyone should import
-        this.fileSystem.importState(newState.fileSystemState);
+        // The host locally computes files via aiEngine, so importing from DB would overwrite concurrent local fs changes with older echos.
+        if (this.currentUsername !== newState.hostUsername) {
+          this.fileSystem.importState(newState.fileSystemState);
+        }
+
         this.onStateUpdate(newState);
       })
       .on('broadcast', { event: 'submit_action' }, (payload: any) => {
@@ -272,19 +274,6 @@ export class MultiplayerService {
         event: 'create_character',
         payload: { username: this.currentUsername, description, host: data.host_username }
       });
-    }
-  }
-
-  async characterCreated(username: string) {
-    if (!this.roomId) return;
-    const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
-    if (data) {
-      const state = data.state;
-      const player = state.players.find((p: any) => p.username === username);
-      if (player) {
-        player.hasCharacter = true;
-        await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
-      }
     }
   }
 
