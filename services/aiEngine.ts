@@ -268,50 +268,62 @@ ${username ? `5. If a character file for "${username}" does not exist, you MUST 
     return data;
   }
 
+  private sanitizeJSON(raw: string): string {
+    let result = '';
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < raw.length; i++) {
+      const char = raw[i];
+      if (inString) {
+        if (escape) {
+          result += char;
+          escape = false;
+        } else if (char === '\\') {
+          result += char;
+          escape = true;
+        } else if (char === '"') {
+          result += char;
+          inString = false;
+        } else if (char === '\n') {
+          result += '\\n';
+        } else if (char === '\r') {
+          result += '\\r';
+        } else if (char === '\t') {
+          result += '\\t';
+        } else {
+          result += char;
+        }
+      } else {
+        if (char === '"') {
+          result += char;
+          inString = true;
+        } else {
+          result += char;
+        }
+      }
+    }
+    return result;
+  }
+
   private extractJSON(text: string): any {
     // 1. Direct parse attempt
     try {
       return JSON.parse(text);
     } catch (e) { }
 
-    // 2. Locate the first { and try to find the balancing }
-    let start = text.indexOf('{');
-    if (start === -1) throw new Error("No JSON object found");
-
-    // Try to find the matching closing brace
-    let braceCount = 0;
-    let end = -1;
-    for (let i = start; i < text.length; i++) {
-      if (text[i] === '{') braceCount++;
-      else if (text[i] === '}') {
-        braceCount--;
-        if (braceCount === 0) {
-          end = i;
-          break;
-        }
-      }
-    }
-
-    if (end !== -1) {
-      const candidate = text.substring(start, end + 1);
-      try {
-        return JSON.parse(candidate);
-      } catch (e) { }
-    }
-
-    // 3. Fallback to markdown blocks if present
-    const mdMatch = text.match(/```json([\s\S]*?)```/);
+    // 2. Clear Markdown blocks if present and sanitize
+    const mdMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (mdMatch) {
       try {
-        return JSON.parse(mdMatch[1]);
+        return JSON.parse(this.sanitizeJSON(mdMatch[1]));
       } catch (e) { }
     }
 
-    // 4. Last ditch: greedy match
+    // 3. Fallback: Greedy match over the whole text, then sanitize unescaped newlines
     const greedyMatch = text.match(/\{[\s\S]*\}/);
     if (greedyMatch) {
       try {
-        return JSON.parse(greedyMatch[0]);
+        return JSON.parse(this.sanitizeJSON(greedyMatch[0]));
       } catch (e) { }
     }
 
