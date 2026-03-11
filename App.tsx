@@ -235,9 +235,9 @@ function App() {
     }]);
   };
 
-  const handleLeaveGame = () => {
+  const handleLeaveGame = async () => {
     if (multiplayerService) {
-      multiplayerService.leaveRoom();
+      await multiplayerService.leaveRoom();
       setMultiplayerService(null);
     }
     localStorage.removeItem('aimud_roomId');
@@ -324,9 +324,9 @@ function App() {
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (gameMode === 'multiplayer' && multiplayerService) {
-      multiplayerService.deleteAdventure();
+      await multiplayerService.deleteAdventure();
     } else {
       fileSystem.clear();
       setNarrative([{
@@ -392,7 +392,10 @@ function App() {
         updates={updates}
         debugMode={debugMode}
         onToggleDebug={() => setDebugMode(!debugMode)}
-        onReset={() => setIsResetModalOpen(true)}
+        onReset={() => {
+          if (gameMode === 'multiplayer' && !isHost) return;
+          setIsResetModalOpen(true);
+        }}
         expandedFile={expandedFile}
         setExpandedFile={setExpandedFile}
         gameMode={gameMode}

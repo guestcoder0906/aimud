@@ -4,19 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "vite",
     "build": "vite build",
-    "start": "node server.ts",
     "preview": "vite preview"
   },
   "dependencies": {
     "@google/genai": "^1.41.0",
-    "express": "^5.2.1",
+    "@supabase/supabase-js": "^2.78.0",
     "lucide-react": "^0.564.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

@@ -1,9 +1,13 @@
-import { io, Socket } from 'socket.io-client';
+/// <reference types="vite/client" />
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { FileSystem } from './fileSystem';
-import { NarrativeEntry, UpdateItem } from '../types';
 
 export class MultiplayerService {
-  private socket: Socket;
+  private supabase: SupabaseClient;
+  private channel: RealtimeChannel | null = null;
+  private roomId: string | null = null;
+  private currentUsername: string | null = null;
+
   private fileSystem: FileSystem;
   private onStateUpdate: (state: any) => void;
   private onExecuteTurn: (inputs: Record<string, string>) => void;
@@ -19,82 +23,302 @@ export class MultiplayerService {
     onKicked: () => void,
     onAdventureDeleted: () => void
   ) {
-    this.socket = io();
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("Missing Supabase credentials in Vite env");
+    }
+    this.supabase = createClient(supabaseUrl, supabaseAnonKey);
+
     this.fileSystem = fileSystem;
     this.onStateUpdate = onStateUpdate;
     this.onExecuteTurn = onExecuteTurn;
     this.onHostCreateCharacter = onHostCreateCharacter;
     this.onKicked = onKicked;
     this.onAdventureDeleted = onAdventureDeleted;
+  }
 
-    this.socket.on('state_updated', (room) => {
-      this.fileSystem.importState(room.fileSystemState);
-      this.onStateUpdate(room);
-    });
+  private generateRoomCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let code = '';
+    for (let i = 0; i < 5; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  }
 
-    this.socket.on('execute_turn', (inputs) => {
-      this.onExecuteTurn(inputs);
-    });
+  async createRoom(username: string): Promise<string> {
+    const roomId = this.generateRoomCode();
+    this.roomId = roomId;
+    this.currentUsername = username;
 
-    this.socket.on('host_create_character', (data) => {
-      this.onHostCreateCharacter(data);
-    });
+    const initialState = {
+      id: roomId,
+      hostUsername: username,
+      players: [{ username, status: 'active', isReady: false, hasCharacter: false }],
+      gameState: 'waiting_for_world',
+      fileSystemState: { files: {}, metadata: {} },
+      narrative: [],
+      updates: [],
+      pendingInputs: {},
+      worldTime: ''
+    };
 
-    this.socket.on('player_kicked', (username) => {
-      if (username === localStorage.getItem('aimud_username')) {
-        this.onKicked();
+    const { error } = await this.supabase
+      .from('rooms')
+      .insert({ id: roomId, host_username: username, state: initialState });
+
+    if (error) {
+      console.error("Failed to create room in DB", error);
+      throw new Error("Unable to contact database");
+    }
+
+    await this.setupChannel(roomId, username, true);
+    // Emit initial
+    this.onStateUpdate(initialState);
+    return roomId;
+  }
+
+  async joinRoom(roomId: string, username: string): Promise<any> {
+    const { data: room, error } = await this.supabase
+      .from('rooms')
+      .select('state')
+      .eq('id', roomId)
+      .single();
+
+    if (error || !room) {
+      throw new Error('Room not found');
+    }
+
+    const state = room.state;
+    const existingPlayerIndex = state.players.findIndex((p: any) => p.username === username);
+
+    // Check uniqueness (but allow taking over if inactive will be handled mostly by presence in V2, for now we let them join)
+    if (existingPlayerIndex !== -1) {
+      // If tracking "active" manually via DB is tricky with tab closes, we let them rejoin
+      state.players[existingPlayerIndex].status = 'active';
+    } else {
+      state.players.push({ username, status: 'active', isReady: false, hasCharacter: false });
+    }
+
+    // Persist new player to db
+    await this.supabase.from('rooms').update({ state }).eq('id', roomId);
+
+    this.roomId = roomId;
+    this.currentUsername = username;
+
+    await this.setupChannel(roomId, username, false);
+
+    this.fileSystem.importState(state.fileSystemState);
+    return state;
+  }
+
+  private async setupChannel(roomId: string, username: string, isHost: boolean) {
+    if (this.channel) {
+      await this.supabase.removeChannel(this.channel);
+    }
+
+    this.channel = this.supabase.channel(`room:${roomId}`, {
+      config: {
+        presence: { key: username }
       }
     });
 
-    this.socket.on('adventure_deleted', () => {
-      this.onAdventureDeleted();
+    this.channel
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (payload: any) => {
+        const newState = payload.new.state;
+
+        // Only import files if we're not the host (Host is the source of truth)
+        // Actually, if we play purely from state, everyone should import
+        this.fileSystem.importState(newState.fileSystemState);
+        this.onStateUpdate(newState);
+      })
+      .on('broadcast', { event: 'submit_action' }, (payload: any) => {
+        // Host intercepts actions and writes to DB
+        if (this.currentUsername === payload.payload.host) {
+          this.handlePlayerActionAsHost(payload.payload.username, payload.payload.action);
+        }
+      })
+      .on('broadcast', { event: 'execute_turn' }, (payload: any) => {
+        if (this.currentUsername === payload.payload.host) {
+          this.onExecuteTurn(payload.payload.inputs);
+        }
+      })
+      .on('broadcast', { event: 'create_character' }, (payload: any) => {
+        if (this.currentUsername === payload.payload.host) {
+          this.onHostCreateCharacter({ username: payload.payload.username, description: payload.payload.description });
+        }
+      })
+      .on('broadcast', { event: 'kick_player' }, (payload: any) => {
+        if (this.currentUsername === payload.payload.username) {
+          this.leaveRoom();
+          this.onKicked();
+        }
+      })
+      .on('broadcast', { event: 'adventure_deleted' }, () => {
+        this.leaveRoom();
+        this.onAdventureDeleted();
+      });
+
+    // Handle Presence to mark players active/inactive automatically
+    this.channel.on('presence', { event: 'sync' }, async () => {
+      const presenceState = this.channel?.presenceState() || {};
+      const activeUsernames = Object.keys(presenceState);
+
+      // Only the host needs to reconcile presence to DB state to trigger turn events
+      if (this.currentUsername) {
+        // Fetch latest state to see who is active
+        const { data } = await this.supabase.from('rooms').select('state, host_username').eq('id', roomId).single();
+        if (data && data.host_username === this.currentUsername) {
+          const state = data.state;
+          let changed = false;
+
+          state.players.forEach((p: any) => {
+            const isActive = activeUsernames.includes(p.username);
+            if (p.status !== (isActive ? 'active' : 'inactive')) {
+              p.status = isActive ? 'active' : 'inactive';
+              changed = true;
+            }
+          });
+
+          if (changed) {
+            await this.supabase.from('rooms').update({ state }).eq('id', roomId);
+            this.checkTurnForHost(state);
+          }
+        }
+      }
+    });
+
+    await this.channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await this.channel?.track({ user: username, online_at: new Date().toISOString() });
+      }
     });
   }
 
-  createRoom(username: string) {
-    return new Promise<string>((resolve) => {
-      this.socket.emit('create_room', username);
-      this.socket.once('room_created', (roomId) => resolve(roomId));
+  async leaveRoom() {
+    if (this.channel) {
+      await this.channel.untrack();
+      await this.supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+    this.roomId = null;
+    this.currentUsername = null;
+  }
+
+  async submitAction(action: string) {
+    if (!this.roomId || !this.channel) return;
+
+    // Fetch host dynamically from DB to avoid staleness
+    const { data } = await this.supabase.from('rooms').select('host_username').eq('id', this.roomId).single();
+    if (data) {
+      this.channel.send({
+        type: 'broadcast',
+        event: 'submit_action',
+        payload: { username: this.currentUsername, action, host: data.host_username }
+      });
+    }
+  }
+
+  // Host only
+  private async handlePlayerActionAsHost(username: string, action: string) {
+    if (!this.roomId) return;
+    const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
+    if (data) {
+      const state = data.state;
+      state.pendingInputs[username] = action;
+      const player = state.players.find((p: any) => p.username === username);
+      if (player) player.isReady = true;
+
+      await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
+      this.checkTurnForHost(state);
+    }
+  }
+
+  private checkTurnForHost(state: any) {
+    if (state.gameState !== 'playing') return;
+    const activePlayers = state.players.filter((p: any) => p.status === 'active' && p.hasCharacter);
+    if (activePlayers.length > 0 && activePlayers.every((p: any) => p.isReady)) {
+      this.channel?.send({
+        type: 'broadcast',
+        event: 'execute_turn',
+        payload: { host: this.currentUsername, inputs: state.pendingInputs }
+      });
+    }
+  }
+
+  async createCharacter(description: string) {
+    if (!this.roomId || !this.channel) return;
+    const { data } = await this.supabase.from('rooms').select('host_username').eq('id', this.roomId).single();
+    if (data) {
+      this.channel.send({
+        type: 'broadcast',
+        event: 'create_character',
+        payload: { username: this.currentUsername, description, host: data.host_username }
+      });
+    }
+  }
+
+  async characterCreated(username: string) {
+    if (!this.roomId) return;
+    const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
+    if (data) {
+      const state = data.state;
+      const player = state.players.find((p: any) => p.username === username);
+      if (player) {
+        player.hasCharacter = true;
+        await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
+      }
+    }
+  }
+
+  async syncState(state: any) {
+    if (!this.roomId) return;
+
+    // Update hasCharacter based on file existence
+    state.players.forEach((p: any) => {
+      p.hasCharacter = Object.keys(state.fileSystemState.files).some(f => f.toLowerCase().endsWith(`-${p.username.toLowerCase()}.txt`));
     });
+
+    if (state.turnProcessed) {
+      state.players.forEach((p: any) => p.isReady = false);
+      state.pendingInputs = {};
+      state.turnProcessed = false; // reset the flag
+    }
+
+    await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
+    this.checkTurnForHost(state);
   }
 
-  joinRoom(roomId: string, username: string) {
-    return new Promise<any>((resolve, reject) => {
-      this.socket.emit('join_room', { roomId, username });
-      this.socket.once('room_joined', (room) => resolve(room));
-      this.socket.once('error', (err) => reject(err));
-    });
-  }
-
-  leaveRoom() {
-    this.socket.emit('leave_room');
-  }
-
-  submitAction(action: string) {
-    this.socket.emit('submit_action', action);
-  }
-
-  createCharacter(description: string) {
-    this.socket.emit('create_character', description);
-  }
-
-  characterCreated(username: string) {
-    this.socket.emit('character_created', username);
-  }
-
-  syncState(state: any) {
-    this.socket.emit('sync_state', state);
-  }
-
-  forceTurn() {
-    this.socket.emit('force_turn');
+  async forceTurn() {
+    if (!this.roomId) return;
+    const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
+    if (data && this.channel) {
+      this.channel.send({
+        type: 'broadcast',
+        event: 'execute_turn',
+        payload: { host: this.currentUsername, inputs: data.state.pendingInputs }
+      });
+    }
   }
 
   kickPlayer(username: string) {
-    this.socket.emit('kick_player', username);
+    this.channel?.send({
+      type: 'broadcast',
+      event: 'kick_player',
+      payload: { username }
+    });
   }
 
-  deleteAdventure() {
-    this.socket.emit('delete_adventure');
+  async deleteAdventure() {
+    if (!this.roomId) return;
+    this.channel?.send({
+      type: 'broadcast',
+      event: 'adventure_deleted'
+    });
+    await this.supabase.from('rooms').delete().eq('id', this.roomId);
+    this.leaveRoom();
   }
 }
+
