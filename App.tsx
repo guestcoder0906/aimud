@@ -153,7 +153,7 @@ function App() {
       async ({ username: newUsername, description }) => {
         // Host creates character for new player
         setIsProcessing(true);
-        const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.`;
+        const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.\n\nCRITICAL: ONLY return the newly created character file. DO NOT modify, empty, or delete ANY existing files (do not use null).`;
         await aiEngine.processAction(prompt);
         // We do NOT call ms.characterCreated(newUsername) here because it causes concurrent race conditions with DB fetch in syncState.
         // syncState will naturally compute hasCharacter across ALL players correctly using the fresh fileSystem context.
@@ -166,14 +166,20 @@ function App() {
       () => {
         // Kicked
         alert('You have been kicked from the session.');
-        setGameMode('singleplayer');
-        setMultiplayerService(null);
+        if (multiplayerService) {
+          multiplayerService.leaveRoom();
+          setMultiplayerService(null);
+        }
+        clearSession();
       },
       () => {
         // Adventure deleted
         alert('The host has deleted the adventure.');
-        setGameMode('singleplayer');
-        setMultiplayerService(null);
+        if (multiplayerService) {
+          multiplayerService.leaveRoom();
+          setMultiplayerService(null);
+        }
+        clearSession();
       }
     );
     setMultiplayerService(ms);
@@ -247,13 +253,32 @@ function App() {
     }]);
   };
 
+  const clearSession = () => {
+    fileSystem.clear();
+    setNarrative([{
+      id: 'init',
+      text: 'You left the session. Enter a scenario prompt to begin.',
+      type: 'system'
+    }]);
+    setUpdates([]);
+    setRecommendations([]);
+    setGameOver(false);
+    setIsInitialized(false);
+    setExpandedFile(null);
+    syncFiles();
+    localStorage.removeItem('aimud_narrative');
+    localStorage.removeItem('aimud_updates');
+    localStorage.removeItem('aimud_recommendations');
+    localStorage.removeItem('aimud_roomId');
+    setGameMode('singleplayer');
+  };
+
   const handleLeaveGame = async () => {
     if (multiplayerService) {
       await multiplayerService.leaveRoom();
       setMultiplayerService(null);
     }
-    localStorage.removeItem('aimud_roomId');
-    setGameMode('singleplayer');
+    clearSession();
   };
 
   const handleAction = async (text: string) => {

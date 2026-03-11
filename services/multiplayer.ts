@@ -7,6 +7,7 @@ export class MultiplayerService {
   private channel: RealtimeChannel | null = null;
   private roomId: string | null = null;
   private currentUsername: string | null = null;
+  private syncQueue: Promise<any> = Promise.resolve();
 
   private fileSystem: FileSystem;
   private onStateUpdate: (state: any) => void;
@@ -278,37 +279,42 @@ export class MultiplayerService {
   }
 
   async syncState(partialState: any) {
-    if (!this.roomId) return;
+    return new Promise<void>((resolve) => {
+      this.syncQueue = this.syncQueue.then(async () => {
+        if (!this.roomId) return resolve();
 
-    const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
-    if (!data) return;
+        const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
+        if (!data) return resolve();
 
-    const state = { ...data.state, ...partialState };
+        const state = { ...data.state, ...partialState };
 
-    // Update hasCharacter based on file existence
-    if (state.players && state.fileSystemState?.files) {
-      state.players.forEach((p: any) => {
-        p.hasCharacter = Object.keys(state.fileSystemState.files).some(f => f.toLowerCase().endsWith(`-${p.username.toLowerCase()}.txt`));
+        // Update hasCharacter based on file existence
+        if (state.players && state.fileSystemState?.files) {
+          state.players.forEach((p: any) => {
+            p.hasCharacter = Object.keys(state.fileSystemState.files).some(f => f.toLowerCase().endsWith(`-${p.username.toLowerCase()}.txt`));
+          });
+        }
+
+        if (state.turnProcessed) {
+          if (state.players) state.players.forEach((p: any) => p.isReady = false);
+          state.pendingInputs = {};
+          state.turnProcessed = false; // reset the flag
+        }
+
+        // Try to auto-start if ready
+        if (state.gameState === 'character_creation' && state.players) {
+          const activePlayers = state.players.filter((p: any) => p.status === 'active');
+          const allHaveCharacters = activePlayers.length > 0 && activePlayers.every((p: any) => p.hasCharacter);
+          if (allHaveCharacters) {
+            state.gameState = 'playing';
+          }
+        }
+
+        await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
+        this.checkTurnForHost(state);
+        resolve();
       });
-    }
-
-    if (state.turnProcessed) {
-      if (state.players) state.players.forEach((p: any) => p.isReady = false);
-      state.pendingInputs = {};
-      state.turnProcessed = false; // reset the flag
-    }
-
-    // Try to auto-start if ready
-    if (state.gameState === 'character_creation' && state.players) {
-      const activePlayers = state.players.filter((p: any) => p.status === 'active');
-      const allHaveCharacters = activePlayers.length > 0 && activePlayers.every((p: any) => p.hasCharacter);
-      if (allHaveCharacters) {
-        state.gameState = 'playing';
-      }
-    }
-
-    await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
-    this.checkTurnForHost(state);
+    });
   }
 
   async forceTurn() {
