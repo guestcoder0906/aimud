@@ -6,9 +6,10 @@ interface MapPanelProps {
   files: string[];
   username: string;
   debugMode: boolean;
+  syncCount: number;
 }
 
-export default function MapPanel({ fileSystem, files, username, debugMode }: MapPanelProps) {
+export default function MapPanel({ fileSystem, files, username, debugMode, syncCount }: MapPanelProps) {
   const [mapData, setMapData] = useState<any>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
 
@@ -23,7 +24,7 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
     } else {
       setMapData(null);
     }
-  }, [fileSystem, files]); // Re-run when files change
+  }, [fileSystem, files, syncCount]); // Re-run when files or syncCount change
 
   let pages: any[] = [];
   if (mapData?.pages && Array.isArray(mapData.pages)) {
@@ -35,8 +36,12 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
 
   if (pages.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 italic p-4 text-center">
-        Map data unavailable. The AI engine is generating the world...
+      <div className="flex flex-col items-center justify-center h-full text-gray-500 italic p-6 text-center gap-4 bg-black">
+        <div className="w-12 h-12 border-2 border-dashed border-gray-800 rounded-full animate-spin-slow flex items-center justify-center text-xl">🗺️</div>
+        <div>
+          <p className="font-bold text-gray-400 not-italic">NO ACTIVE MAP DATA</p>
+          <p className="mt-1 text-[10px]">The AI engine generates the world as you move.</p>
+        </div>
       </div>
     );
   }

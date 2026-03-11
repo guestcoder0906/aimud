@@ -54,16 +54,16 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
       const isSuccess = result.toLowerCase().includes('success');
       const baseColor = isSuccess ? 'text-green-300' : 'text-red-300';
 
-      return `<span class="group relative ${baseColor} border-b border-dashed border-current select-none ml-1 text-xs cursor-help">
+      return `<span class="group relative ${baseColor} border-b border-dashed border-current select-none ml-1 text-xs cursor-help inline-block">
         [Math: ${name}]
-        <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-neutral-900 border border-neutral-700 rounded shadow-xl text-xs text-gray-300 z-50 pointer-events-none format-pre text-left">
-          <div class="font-bold text-blue-400 border-b border-neutral-800 pb-1 mb-1">${name}</div>
-          <div class="grid grid-cols-2 gap-1 mb-1">
+        <span class="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 md:w-80 p-2 bg-neutral-900 border border-neutral-700 rounded shadow-xl text-xs text-gray-300 z-50 pointer-events-none format-pre text-left max-w-[85vw] md:max-w-sm">
+          <div class="font-bold text-blue-400 border-b border-neutral-800 pb-1 mb-1 truncate">${name}</div>
+          <div class="grid grid-cols-2 gap-x-2 gap-y-1 mb-1">
             <span class="text-gray-500">Roll:</span> <span class="text-white">${roll}</span>
             <span class="text-gray-500">Result:</span> <span class="${baseColor} font-bold">${result}</span>
           </div>
-          <div class="text-gray-500 mb-1 border-t border-neutral-800 pt-1">Thresholds:</div>
-          <div class="font-mono text-[10px] whitespace-pre-wrap">${thresholds.replace(/&quot;/g, '"')}</div>
+          <div class="text-gray-500 mb-1 border-t border-neutral-800 pt-1 text-[10px] uppercase tracking-wider">Thresholds</div>
+          <div class="font-mono text-[10px] whitespace-pre-wrap break-all bg-black/30 p-1 rounded border border-neutral-800/50">${thresholds.replace(/&quot;/g, '"')}</div>
         </span>
       </span>`;
     });

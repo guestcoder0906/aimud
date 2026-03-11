@@ -24,6 +24,7 @@ interface SidebarProps {
   onToggleAutoRecommendations: () => void;
   onHostClick: () => void;
   onJoinClick: () => void;
+  syncCount: number;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -45,7 +46,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   autoRecommendationsEnabled,
   onToggleAutoRecommendations,
   onHostClick,
-  onJoinClick
+  onJoinClick,
+  syncCount
 }) => {
 
   const [activeTab, setActiveTab] = useState<'files' | 'map'>('files');
@@ -248,7 +250,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ) : (
           <div className="flex-1 overflow-hidden">
-            <MapPanel fileSystem={fileSystem} files={files} username={username} debugMode={debugMode} />
+            <MapPanel fileSystem={fileSystem} files={files} username={username} debugMode={debugMode} syncCount={syncCount} />
           </div>
         )}
       </div>

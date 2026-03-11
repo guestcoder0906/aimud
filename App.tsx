@@ -37,6 +37,7 @@ function App() {
     const saved = localStorage.getItem('aimud_autoRecommendationsEnabled');
     return saved !== null ? JSON.parse(saved) : true;
   });
+  const [syncCount, setSyncCount] = useState(0);
 
   // Multiplayer state
   const [gameMode, setGameMode] = useState<'singleplayer' | 'multiplayer'>(() => {
@@ -84,6 +85,7 @@ function App() {
   // Sync state with filesystem on mount and updates
   const syncFiles = () => {
     setFiles(fileSystem.list());
+    setSyncCount(prev => prev + 1);
     const timeContent = fileSystem.read('WorldTime.txt');
     if (timeContent) {
       setWorldTime(timeContent);
@@ -166,7 +168,7 @@ function App() {
         // Host creates character for new player
         updateProcessing(1);
         try {
-          const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: You MUST include a "Tier/Level" (e.g. Newbie) and a comprehensive [CAPABILITIES & LIMITATIONS] section. Every ability must have SPECIFIC, QUANTIFIABLE limitations (e.g. "Max 10 lbs", "Range 5m", "Elemental Only"). Include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation; use base values. Stats must be represented as modifiers to the base probability engine (0-1000). Armor must be represented with a base threshold and specific damage type immunities.\n\nCRITICAL: Return the newly created character file AND update "CurrentMap.json" to place the new player at the appropriate starting location for the current context. DO NOT modify, empty, or delete ANY OTHER existing files (do not use null).`;
+          const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.\n\nCRITICAL: Return the newly created character file AND update "CurrentMap.json" to place the new player at the appropriate starting location for the current context. DO NOT modify, empty, or delete ANY OTHER existing files (do not use null).`;
           await aiEngine.processAction(prompt);
           ms.syncState({
             fileSystemState: fileSystem.exportState(),
@@ -517,6 +519,7 @@ function App() {
         onToggleAutoRecommendations={() => setAutoRecommendationsEnabled(!autoRecommendationsEnabled)}
         onHostClick={() => setShowMultiplayerModal('host')}
         onJoinClick={() => setShowMultiplayerModal('join')}
+        syncCount={syncCount}
       />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
