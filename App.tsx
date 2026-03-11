@@ -248,7 +248,7 @@ function App() {
     setShowMultiplayerModal(null);
     setNarrative([{
       id: 'init',
-      text: `Hosting Room: ${roomId}. Enter a scenario prompt to begin world generation.`,
+      text: `Hosting Room: ${roomId}. Enter world description to start adventure....`,
       type: 'system'
     }]);
   };
@@ -265,6 +265,8 @@ function App() {
     setGameOver(false);
     setIsInitialized(false);
     setExpandedFile(null);
+    setShowCharacterCreation(false);
+    setRoomState(null);
     syncFiles();
     localStorage.removeItem('aimud_narrative');
     localStorage.removeItem('aimud_updates');
@@ -402,6 +404,12 @@ function App() {
         <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-50">
           <div className="bg-neutral-900 border border-neutral-700 p-8 rounded-lg shadow-2xl w-96 max-w-full">
             <h2 className="text-xl text-center text-blue-300 mb-4">Create Your Character</h2>
+
+            <div className="mb-4 bg-black/50 p-3 rounded border border-neutral-800 text-xs text-gray-400">
+              <span className="font-bold text-gray-300">Adventure Context:</span>
+              <p className="mt-1 italic">{roomState?.narrative?.find((n: any) => n.type === 'user')?.text || 'A new adventure awaits...'}</p>
+            </div>
+
             <p className="text-sm text-gray-400 mb-4">Describe your character's class, appearance, and background.</p>
             <textarea
               value={characterDescription}

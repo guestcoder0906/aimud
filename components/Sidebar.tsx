@@ -203,14 +203,14 @@ const Sidebar: React.FC<SidebarProps> = ({
               <input type="checkbox" checked={autoRecommendationsEnabled} onChange={onToggleAutoRecommendations} className="hidden" />
               <span className={autoRecommendationsEnabled ? "text-blue-400" : ""}>AUTO</span>
             </label>
-            {(!roomState || isHost || gameMode === 'singleplayer') && (
+            {gameMode === 'singleplayer' && (
               <label className="flex items-center gap-1 cursor-pointer hover:text-white transition-colors">
                 <input type="checkbox" checked={debugMode} onChange={onToggleDebug} className="hidden" />
                 <Settings size={12} className={debugMode ? "text-yellow-400" : ""} />
                 <span className={debugMode ? "text-yellow-400" : ""}>DEBUG</span>
               </label>
             )}
-            {(!roomState || isHost || gameMode === 'singleplayer') && (
+            {gameMode === 'singleplayer' && (
               <button onClick={onReset} className="hover:text-red-400 transition-colors" title="Delete Adventure">
                 <RefreshCw size={12} />
               </button>

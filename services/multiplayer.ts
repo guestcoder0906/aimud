@@ -93,18 +93,8 @@ export class MultiplayerService {
     }
 
     const state = room.state;
-    const existingPlayerIndex = state.players.findIndex((p: any) => p.username === username);
-
-    // Check uniqueness (but allow taking over if inactive will be handled mostly by presence in V2, for now we let them join)
-    if (existingPlayerIndex !== -1) {
-      // If tracking "active" manually via DB is tricky with tab closes, we let them rejoin
-      state.players[existingPlayerIndex].status = 'active';
-    } else {
-      state.players.push({ username, status: 'active', isReady: false, hasCharacter: false });
-    }
-
-    // Persist new player to db
-    await this.supabase.from('rooms').update({ state }).eq('id', roomId);
+    // We no longer update DB here. The client just sets up its channel and presence.
+    // The Host's presence sync listener will detect the new user and add them securely to the DB.
 
     this.roomId = roomId;
     this.currentUsername = username;
@@ -165,31 +155,41 @@ export class MultiplayerService {
       });
 
     // Handle Presence to mark players active/inactive automatically
-    this.channel.on('presence', { event: 'sync' }, async () => {
+    this.channel.on('presence', { event: 'sync' }, () => {
       const presenceState = this.channel?.presenceState() || {};
       const activeUsernames = Object.keys(presenceState);
 
-      // Only the host needs to reconcile presence to DB state to trigger turn events
       if (this.currentUsername) {
-        // Fetch latest state to see who is active
-        const { data } = await this.supabase.from('rooms').select('state, host_username').eq('id', roomId).single();
-        if (data && data.host_username === this.currentUsername) {
-          const state = data.state;
-          let changed = false;
+        // Enqueue host's presence reconciliation to prevent race conditions with syncState
+        this.syncQueue = this.syncQueue.then(async () => {
+          const { data } = await this.supabase.from('rooms').select('state, host_username').eq('id', roomId).single();
+          if (data && data.host_username === this.currentUsername) {
+            const state = data.state;
+            let changed = false;
 
-          state.players.forEach((p: any) => {
-            const isActive = activeUsernames.includes(p.username);
-            if (p.status !== (isActive ? 'active' : 'inactive')) {
-              p.status = isActive ? 'active' : 'inactive';
-              changed = true;
+            // Mark existing as active/inactive
+            state.players.forEach((p: any) => {
+              const isActive = activeUsernames.includes(p.username);
+              if (p.status !== (isActive ? 'active' : 'inactive')) {
+                p.status = isActive ? 'active' : 'inactive';
+                changed = true;
+              }
+            });
+
+            // Add newly joined players
+            activeUsernames.forEach((u: string) => {
+              if (!state.players.find((p: any) => p.username === u)) {
+                state.players.push({ username: u, status: 'active', isReady: false, hasCharacter: false });
+                changed = true;
+              }
+            });
+
+            if (changed) {
+              await this.supabase.from('rooms').update({ state }).eq('id', roomId);
+              this.checkTurnForHost(state);
             }
-          });
-
-          if (changed) {
-            await this.supabase.from('rooms').update({ state }).eq('id', roomId);
-            this.checkTurnForHost(state);
           }
-        }
+        });
       }
     });
 
@@ -227,16 +227,18 @@ export class MultiplayerService {
   // Host only
   private async handlePlayerActionAsHost(username: string, action: string) {
     if (!this.roomId) return;
-    const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
-    if (data) {
-      const state = data.state;
-      state.pendingInputs[username] = action;
-      const player = state.players.find((p: any) => p.username === username);
-      if (player) player.isReady = true;
+    this.syncQueue = this.syncQueue.then(async () => {
+      const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
+      if (data) {
+        const state = data.state;
+        state.pendingInputs[username] = action;
+        const player = state.players.find((p: any) => p.username === username);
+        if (player) player.isReady = true;
 
-      await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
-      this.checkTurnForHost(state);
-    }
+        await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
+        this.checkTurnForHost(state);
+      }
+    });
   }
 
   private checkTurnForHost(state: any) {
