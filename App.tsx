@@ -32,10 +32,7 @@ function App() {
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
   const [worldTime, setWorldTime] = useState<string>('');
   const [gameOver, setGameOver] = useState(false);
-  const [recommendations, setRecommendations] = useState<string[]>(() => {
-    const saved = localStorage.getItem('aimud_recommendations');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [recommendations, setRecommendations] = useState<string[]>([]);
   const [autoRecommendationsEnabled, setAutoRecommendationsEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem('aimud_autoRecommendationsEnabled');
     return saved !== null ? JSON.parse(saved) : true;
@@ -79,11 +76,6 @@ function App() {
     }
   }, [updates, gameMode]);
 
-  useEffect(() => {
-    if (gameMode === 'singleplayer') {
-      localStorage.setItem('aimud_recommendations', JSON.stringify(recommendations));
-    }
-  }, [recommendations, gameMode]);
 
   useEffect(() => {
     localStorage.setItem('aimud_autoRecommendationsEnabled', JSON.stringify(autoRecommendationsEnabled));
@@ -252,7 +244,11 @@ function App() {
         setGameMode('singleplayer');
       }
     }
-  }, [gameMode]);
+    // Clear recommendations on mode switch if not initialized to force fresh ones for the new mode
+    if (!isInitialized || (gameMode === 'multiplayer' && roomState?.gameState === 'waiting_for_world')) {
+      setRecommendations([]);
+    }
+  }, [gameMode, isInitialized, roomState?.gameState]);
 
   // Removed handleStartSingleplayer as we default to it
 
