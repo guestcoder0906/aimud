@@ -254,12 +254,34 @@ ${username ? `7. If a character file for "${username}" does not exist, you MUST 
 
     // Phase 2: If checks are required
     if (data.checks && Array.isArray(data.checks) && data.checks.length > 0) {
+      // Also process any file updates from Phase 1 so they aren't lost
+      this.processResponseData(data);
+
       const results = data.checks.map(check => {
+        // Normalize alternate AI check formats
+        // AI sometimes returns { check, stat, threshold, modifier } instead of { name, thresholds }
+        const safeName = check.name || check.check || check.stat || 'Action Check';
+        const safeDesc = check.description || `Probability roll for ${safeName}`;
+
+        let safeThresholds: { [key: string]: number };
+        if (check.thresholds && typeof check.thresholds === 'object') {
+          safeThresholds = check.thresholds;
+        } else if (typeof check.threshold === 'number') {
+          // Convert flat threshold + modifier to proper thresholds object
+          const base = check.threshold;
+          const mod = check.modifier || 0;
+          const adjusted = Math.max(0, Math.min(1000, base - mod));
+          safeThresholds = {
+            "Critical Success": Math.min(1000, adjusted + 200),
+            "Success": adjusted,
+            "Partial Success": Math.max(0, adjusted - 150)
+          };
+        } else {
+          safeThresholds = { "Success": 500 };
+        }
+
         const roll = Math.floor(Math.random() * 1001);
-        const outcome = this.determineOutcome(roll, check.thresholds);
-        const safeName = check.name || 'Action Check';
-        const safeDesc = check.description || 'Probability roll for an uncertain event';
-        const safeThresholds = check.thresholds || { "Success": 500 };
+        const outcome = this.determineOutcome(roll, safeThresholds);
         return {
           name: safeName,
           description: safeDesc,
@@ -352,6 +374,22 @@ ${username ? `7. If a character file for "${username}" does not exist, you MUST 
       try {
         return JSON.parse(this.sanitizeJSON(greedyMatch[0]));
       } catch (e) { }
+
+      // 4. Progressive brace trimming — AI sometimes adds extra trailing } characters
+      let candidate = greedyMatch[0];
+      for (let attempt = 0; attempt < 5; attempt++) {
+        // Try removing the last }
+        const lastBrace = candidate.lastIndexOf('}');
+        if (lastBrace <= 0) break;
+        candidate = candidate.substring(0, lastBrace);
+        // Find the matching end
+        const reMatch = candidate.match(/\{[\s\S]*\}/);
+        if (reMatch) {
+          try {
+            return JSON.parse(this.sanitizeJSON(reMatch[0]));
+          } catch (e2) { }
+        }
+      }
     }
 
     throw new Error("Failed to extract valid JSON");

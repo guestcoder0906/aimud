@@ -23,9 +23,14 @@ export interface UpdateItem {
 }
 
 export interface CheckDef {
-  name: string;
-  description: string;
-  thresholds: { [outcome: string]: number };
+  name?: string;
+  description?: string;
+  thresholds?: { [outcome: string]: number };
+  // Alternate AI format fields
+  check?: string;
+  stat?: string;
+  threshold?: number;
+  modifier?: number;
 }
 
 export interface AIResponse {
