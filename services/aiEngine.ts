@@ -140,31 +140,20 @@ SPATIAL CONSISTENCY RULE (CRITICAL):
   * If an area-of-effect ability has "Radius 10m", the corresponding map area MUST have radius=10 or width/height=20.
   * If a character has "Melee range: 2m", targets MUST be within 2 coordinate units.
 
-MANDATORY MOVEMENT & MAP UPDATE RULE (CRITICAL — READ CAREFULLY):
-- YOU MUST UPDATE CurrentMap.json IN EVERY SINGLE RESPONSE. There is no valid response where the player does something and the map stays unchanged. Even "looking around" changes facing direction.
-- EVERY action the player takes implies physical presence. If they attack, interact, talk to, pick up, use, examine closely, or engage with ANY entity, they MUST be physically close enough on the map. Check the distance FIRST.
-- AUTO-APPROACH BEHAVIOR: When a player attempts to interact with something out of range (attack, talk to NPC, pick up item, open door, etc.):
-  1. Calculate Euclidean distance from player position to target: sqrt((x2-x1)^2 + (y2-y1)^2).
-  2. If the player is OUT OF RANGE for the interaction:
-     a. Calculate max distance the player can move this turn: speed × time_cost_of_action.
-     b. Move the player TOWARD the target along the direct line by that distance (or less if it reaches interaction range).
-     c. New position: newX = oldX + (targetX - oldX) * (moveDistance / totalDistance), newY = oldY + (targetY - oldY) * (moveDistance / totalDistance).
-     d. If after moving they are now in range, the interaction SUCCEEDS and narrate the approach + action.
-     e. If after moving they are STILL out of range, narrate that they moved toward it but couldn't reach it yet. The action is INCOMPLETE.
-  3. If the player IS in range, the interaction happens but you MUST STILL update their facing direction toward the target.
-  4. NEVER allow an interaction to succeed while the player's map position stays far from the target. This is the #1 bug to avoid.
-- When processing ANY action involving distance (movement, attacks, spells, effects, thrown objects, projectiles, sight, hearing), you MUST:
-  1. Calculate the actual coordinate distance between source and target on the map using Euclidean distance.
-  2. Compare it against the declared range/speed from the character's file.
-  3. Apply the AUTO-APPROACH behavior above if out of range.
-  4. Update CurrentMap.json positions to reflect the actual distance moved/affected.
-- NPC MOVEMENT: NPCs also move! If an NPC attacks or approaches the player, update the NPC's position in the 'areas' array too. NPCs should not stay static when they are engaging in combat or moving.
-- FACING DIRECTION: Always update the player's 'facing' angle to point toward whatever they are interacting with. facing = atan2(targetY - playerY, targetX - playerX) * 180 / PI.
-- VISION & DETECTION: Player vision ranges (detailedRange, maxRange) in CurrentMap.json MUST match perception abilities. NPCs beyond maxRange should NOT be visible on the map.
-- When generating or updating CurrentMap.json: cross-reference EVERY coordinate against the scale. A room described as "10m x 10m" MUST have width=10, height=10 in coordinates.
-- NEVER place entities at arbitrary large coordinates that don't match the scale. If the map is 50m scale, most coordinates should be within a 0-50 range.
-- Movement MUST be calculated step by step: distance = speed × time_elapsed. The player's new (x, y) position must be exactly that distance from their old position, in the direction of movement.
-- A screenshot of the current map state will be attached to requests. Use it to visually verify spatial consistency — if something looks wrong on the screenshot (entities overlapping, wildly spread out, out of bounds), FIX it in your CurrentMap.json update.
+MANDATORY MOVEMENT & MAP UPDATE RULE (CRITICAL):
+- CurrentMap.json MUST be updated in EVERY response. Any player action implies a physical state change — at minimum, update the player's facing direction.
+- Physical proximity is required for interaction. Before resolving any action (attack, talk, pick up, open, use, examine, etc.), verify the player is within interaction range of the target using the SPATIAL CONTEXT distances provided.
+- AUTO-APPROACH: If a player is out of range for their intended action:
+  1. Compute max traversable distance: walking_speed (from character file) × action_time_cost (seconds).
+  2. Move the player along the direct vector toward the target by that distance, or stop at interaction range if closer.
+  3. New coordinates: newX = oldX + (targetX - oldX) × (moveDist / totalDist), newY = oldY + (targetY - oldY) × (moveDist / totalDist).
+  4. If now in range → action succeeds; narrate the approach and the action together.
+  5. If still out of range → action is incomplete; narrate the partial approach and remaining distance.
+- FACING: Update the player's 'facing' field to point toward the interaction target: facing = atan2(targetY - playerY, targetX - playerX) × 180 / π.
+- NPC & ENTITY MOVEMENT: When NPCs engage in combat, pursue, flee, or patrol, update their (x, y) position in the 'areas' array proportional to their speed × time.
+- VISION & DETECTION: Player vision ranges (detailedRange, maxRange) in CurrentMap.json must match perception stats. Entities beyond maxRange must not appear on the map.
+- COORDINATE INTEGRITY: All coordinates must be proportional to the declared map scale. A "10m × 10m" room = width:10, height:10. Never use arbitrary coordinates that violate the scale.
+- A screenshot of the current map may be attached. Use it to visually verify spatial consistency of your response.
 
 FILE REFERENCE SYNTAX:
 Use [DisplayName] or [FileName] in narrative text - these become clickable links to files
@@ -259,8 +248,13 @@ export class AIEngine {
           const charContext = charFiles.length > 0 ? `ACTIVE CHARACTER FILES:\n${formatFileSet(charFiles)}\n\n` : '';
           const worldContext = `WORLD FILES:\n${formatFileSet(otherFiles)}`;
 
+          // Pre-compute spatial context with exact distances
+          const spatialContext = this.buildSpatialContext(username);
+          // Capture old map state for post-processing
+          const oldMapRaw = this.fs.read('CurrentMap.json');
+
           const userHeader = username ? `[Player: ${username}]\n` : '';
-          const prompt = `Current Files Summary:\n${charContext}${worldContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
+          const prompt = `Current Files Summary:\n${charContext}${worldContext}\n\n${spatialContext}\n${userHeader}Player action: ${action}\n\nProcess this action.
           
 CRITICAL REMINDER: 
 1. If the player's action causes ANY change to their stats (Health, Energy, Inventory), you MUST include the updated character file content in your 'files' response.
@@ -270,10 +264,16 @@ CRITICAL REMINDER:
 5. Ensure all stats use the new dynamic probability engine modifier format.
 6. NO VAGUE MAGIC: Any spell, superpower, or supernatural ability MUST be strictly documented with limits (e.g., max weight 5 lbs, max range 10m), strict energy costs per use, and exact constraints. "Vague magic" is rejected.
 7. FILE MINIMIZATION (CRITICAL): Do NOT re-include files in 'files' if their content has NOT changed. Only include files that are NEW, MODIFIED, or DELETED. Repeating unchanged files wastes resources.
-8. MAP POSITION UPDATE (CRITICAL): You MUST update CurrentMap.json in EVERY response. If the player performs ANY physical action (attack, move, interact, pick up, open, talk), their (x, y) position and facing direction MUST change on the map. If a target is out of range, AUTO-MOVE the player toward it (distance = speed × time). Never let an interaction succeed with the player still far away on the map.${mapScreenshot ? '\n9. A screenshot of the current map is attached. Use it to visually verify that your CurrentMap.json updates are spatially consistent with what you see.' : ''}
+8. MAP POSITION UPDATE (CRITICAL): You MUST update CurrentMap.json in EVERY response. The SPATIAL CONTEXT above shows exact distances — use those numbers. If the player interacts with anything, move them to the appropriate position. If they are too far, move them toward it by their speed × time. Always update facing direction.${mapScreenshot ? '\n9. A screenshot of the current map is attached. Use it to visually verify spatial consistency.' : ''}
 ${username ? `${mapScreenshot ? '10' : '9'}. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot);
+
+          // Post-process: enforce spatial consistency on the returned map
+          if (res && oldMapRaw) {
+            this.enforceSpatialConsistency(oldMapRaw, username);
+          }
+
           resolve(res);
         } catch (e) {
           console.error("Processing failed", e);
@@ -281,6 +281,237 @@ ${username ? `${mapScreenshot ? '10' : '9'}. If a character file for "${username
         }
       });
     });
+  }
+
+  /**
+   * Pre-computes exact Euclidean distances from the active player to nearby entities on the map.
+   * Only includes entities within the player's vision/interaction range to keep the prompt efficient.
+   * Returns a formatted string block to inject into the prompt.
+   */
+  private buildSpatialContext(username?: string): string {
+    const mapRaw = this.fs.read('CurrentMap.json');
+    if (!mapRaw) return '';
+
+    try {
+      const mapData = JSON.parse(mapRaw);
+      const pages = mapData.pages || (mapData.areas ? [mapData] : []);
+      if (pages.length === 0) return '';
+
+      const lines: string[] = ['[SPATIAL CONTEXT — Nearby entities with pre-computed distances (meters).]'];
+
+      for (const page of pages) {
+        const players = page.players || [];
+        const areas = page.areas || [];
+
+        for (const player of players) {
+          const px = Number(player.x) || 0;
+          const py = Number(player.y) || 0;
+          const playerLabel = player.username || 'Unknown';
+
+          // Use player's max vision range as the relevance radius, or default 50m
+          const maxRange = Number(player.vision?.maxRange) || 50;
+
+          // Compute distances to all areas, then filter and sort
+          const areaDistances: { name: string; type: string; dist: number; cx: number; cy: number }[] = [];
+          for (const area of areas) {
+            const ax = Number(area.x) || 0;
+            const ay = Number(area.y) || 0;
+            const aw = Number(area.width) || 0;
+            const ah = Number(area.height) || 0;
+            const cx = area.shape === 'circle' ? ax : ax + aw / 2;
+            const cy = area.shape === 'circle' ? ay : ay + ah / 2;
+            const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+            const name = area.name || area.id || `area_${areas.indexOf(area)}`;
+            areaDistances.push({ name, type: area.type || 'unknown', dist, cx, cy });
+          }
+
+          // Filter to entities within range and sort closest first
+          const nearby = areaDistances
+            .filter(a => a.dist <= maxRange * 1.5) // slight buffer beyond vision
+            .sort((a, b) => a.dist - b.dist);
+
+          if (nearby.length === 0 && areaDistances.length > 0) {
+            // If nothing is in range, show the 3 closest so the AI knows what's nearest
+            areaDistances.sort((a, b) => a.dist - b.dist);
+            nearby.push(...areaDistances.slice(0, 3));
+          }
+
+          const distLines = nearby.map(a =>
+            `  → ${a.name} (${a.type}): ${a.dist.toFixed(1)}m [at (${a.cx.toFixed(1)}, ${a.cy.toFixed(1)})]`
+          );
+
+          // Other players are always relevant
+          for (const other of players) {
+            if (other.username === player.username) continue;
+            const ox = Number(other.x) || 0;
+            const oy = Number(other.y) || 0;
+            const dist = Math.sqrt((px - ox) ** 2 + (py - oy) ** 2);
+            distLines.push(`  → Player ${other.username}: ${dist.toFixed(1)}m [at (${ox.toFixed(1)}, ${oy.toFixed(1)})]`);
+          }
+
+          lines.push(`${playerLabel} at (${px.toFixed(1)}, ${py.toFixed(1)}), facing ${player.facing || 0}°:`);
+          lines.push(...distLines);
+        }
+
+        if (page.scale) {
+          lines.push(`Map scale: ${page.scale}`);
+        }
+      }
+
+      return lines.join('\n');
+    } catch (e) {
+      console.error('Failed to build spatial context', e);
+      return '';
+    }
+  }
+
+  /**
+   * Post-processes the AI's response to enforce spatial consistency.
+   * Compares old vs new map state and corrects player positions if the AI
+   * failed to move them appropriately toward any interactive entity.
+   */
+  private enforceSpatialConsistency(oldMapRaw: string, username?: string) {
+    const newMapRaw = this.fs.read('CurrentMap.json');
+    if (!newMapRaw || !oldMapRaw) return;
+
+    try {
+      const oldMap = JSON.parse(oldMapRaw);
+      const newMap = JSON.parse(newMapRaw);
+
+      const oldPages = oldMap.pages || (oldMap.areas ? [oldMap] : []);
+      const newPages = newMap.pages || (newMap.areas ? [newMap] : []);
+
+      // Interactive area types — anything a player could physically engage with
+      const interactiveTypes = new Set([
+        'npc', 'treasure', 'loot', 'furniture', 'vehicle', 'terminal',
+        'portal', 'tech', 'magic', 'obstacle', 'building'
+      ]);
+
+      let modified = false;
+
+      for (let pi = 0; pi < newPages.length; pi++) {
+        const newPage = newPages[pi];
+        const oldPage = oldPages[pi];
+        if (!newPage?.players || !oldPage?.players) continue;
+
+        const areas = newPage.areas || [];
+
+        for (const newPlayer of newPage.players) {
+          const oldPlayer = oldPage.players.find((p: any) =>
+            p.username?.toLowerCase() === newPlayer.username?.toLowerCase()
+          );
+          if (!oldPlayer) continue;
+
+          const oldX = Number(oldPlayer.x) || 0;
+          const oldY = Number(oldPlayer.y) || 0;
+          const newX = Number(newPlayer.x) || 0;
+          const newY = Number(newPlayer.y) || 0;
+
+          // If the AI already moved the player, trust the AI's calculation
+          if (Math.abs(newX - oldX) > 0.1 || Math.abs(newY - oldY) > 0.1) continue;
+
+          // Player didn't move — find the closest interactive entity
+          let closestTarget: { cx: number; cy: number } | null = null;
+          let closestDist = Infinity;
+
+          for (const area of areas) {
+            // Consider any interactive type, not just NPCs
+            if (!interactiveTypes.has(area.type?.toLowerCase())) continue;
+
+            const ax = Number(area.x) || 0;
+            const ay = Number(area.y) || 0;
+            const aw = Number(area.width) || 0;
+            const ah = Number(area.height) || 0;
+            const cx = area.shape === 'circle' ? ax : ax + aw / 2;
+            const cy = area.shape === 'circle' ? ay : ay + ah / 2;
+            const dist = Math.sqrt((newX - cx) ** 2 + (newY - cy) ** 2);
+
+            if (dist < closestDist) {
+              closestDist = dist;
+              closestTarget = { cx, cy };
+            }
+          }
+
+          // If the closest interactive entity is beyond reasonable interaction range,
+          // move the player toward it
+          if (closestTarget && closestDist > 3) {
+            const moveSpeed = this.extractPlayerSpeed(newPlayer.username) || 1.5;
+            // Estimate time from WorldTime diff, or use a reasonable default
+            const timeCost = this.estimateTimeCost() || 6;
+            const maxMove = moveSpeed * timeCost;
+            const moveDistance = Math.min(maxMove, Math.max(0, closestDist - 1.5));
+
+            if (moveDistance > 0.5) {
+              const ratio = moveDistance / closestDist;
+              newPlayer.x = +(oldX + (closestTarget.cx - oldX) * ratio).toFixed(1);
+              newPlayer.y = +(oldY + (closestTarget.cy - oldY) * ratio).toFixed(1);
+
+              // Update facing direction toward the target
+              const facingRad = Math.atan2(
+                closestTarget.cy - newPlayer.y,
+                closestTarget.cx - newPlayer.x
+              );
+              newPlayer.facing = +(facingRad * 180 / Math.PI).toFixed(0);
+
+              modified = true;
+            }
+          }
+        }
+      }
+
+      if (modified) {
+        const correctedJson = JSON.stringify(newMap.pages ? newMap : { pages: newPages });
+        this.fs.write('CurrentMap.json', correctedJson);
+      }
+    } catch (e) {
+      console.error('Spatial consistency enforcement failed', e);
+    }
+  }
+
+  /**
+   * Extracts a player's movement speed from their character file.
+   * Handles varied formats: "Walking: 1.5m/s", "Speed 5 ft/s", "Movement Speed: 3 meters per second", etc.
+   * Returns speed in m/s, or null if not found.
+   */
+  private extractPlayerSpeed(username: string): number | null {
+    if (!username) return null;
+    const files = this.fs.getAll();
+    const uLower = username.toLowerCase();
+
+    for (const [name, content] of Object.entries(files)) {
+      if (!name.toLowerCase().includes(uLower)) continue;
+
+      // Try multiple patterns from most specific to least
+      const patterns = [
+        /(?:walk(?:ing)?|run(?:ning)?|move(?:ment)?|speed|sprint(?:ing)?|base\s*speed)[:\s]*(\d+\.?\d*)\s*m(?:eters?)?\s*(?:\/|per\s*)s(?:ec(?:ond)?)?/i,
+        /(\d+\.?\d*)\s*m\/s/i,
+        /(\d+\.?\d*)\s*(?:ft|feet)\s*(?:\/|per\s*)s(?:ec)?/i,  // ft/s → convert
+        /(\d+\.?\d*)\s*(?:km|kph|km\/h)/i,  // km/h → convert
+        /(?:speed|movement)[:\s]*(\d+\.?\d*)/i, // bare number fallback
+      ];
+
+      for (let i = 0; i < patterns.length; i++) {
+        const match = content.match(patterns[i]);
+        if (match) {
+          let speed = parseFloat(match[1]);
+          // Convert units to m/s
+          if (i === 2) speed *= 0.3048;    // ft/s → m/s
+          if (i === 3) speed /= 3.6;       // km/h → m/s
+          if (speed > 0 && speed < 100) return speed; // sanity check
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Estimates the time cost of the last action by checking the most recent
+   * update entry or WorldTime changes. Returns seconds, or null if unknown.
+   */
+  private estimateTimeCost(): number | null {
+    // Check the WorldTime.txt for any time-related info
+    // This is a best-effort estimation — return null to use defaults
+    return null;
   }
 
   private async handleRequest(userPrompt: string, mapScreenshot?: string): Promise<AIResponse | null> {
