@@ -52,11 +52,18 @@ GROUP ENTITY RULE:
 - Inside this shared file, explicitly list the individuals, their specific names/identifiers (e.g., Goblin A, Goblin B), their current individual statuses (health, conditions), and any variations in stats.
 - Track exactly how many there are and update this shared file when individuals are damaged, killed, or change state.
 
-NO DICE RULE (CRITICAL):
-- NEVER use dice notation (e.g., 1d6, 2d20, 1d10+5).
-- ALL calculations (damage, healing, success rates) must be dynamically calculated based on context, base stats, and the probability engine.
-- Example: Instead of "Damage: 1d6 Bludgeoning", use "Base Damage: 20 Bludgeoning (Final damage = Base x probability engine %)".
-- Use the "checks" array to request a probability engine roll (0-1000) when an uncertain action occurs, and use the result to calculate the exact dynamic outcome.
+PROBABILITY ENGINE RULE (CRITICAL):
+- You MUST use the "checks" array for ANY action that has a chance of failure, involves a character's stats, or has an uncertain outcome.
+- NEVER decide the outcome of an uncertain action yourself in the narrative. ALWAYS request a check from the probability engine (0-1000).
+- Actions that REQUIRE a check:
+  * Combat (Attacking, defending, dodging, using abilities)
+  * Stealth and Detection
+  * Social manipulation (Persuasion, Intimidation, Deception)
+  * Physical feats (Climbing, jumping, lifting, swimming)
+  * Magic or Technical operations with risk
+  * Resistance against effects or toxins
+- If an action should be modified by stats (e.g., Agility, Strength), you MUST define thresholds in the "checks" object that reflect those stats.
+- If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
 
 DYNAMIC STATS RULE (CRITICAL):
 - Stats must NOT be stale numbers (e.g., "Agility: 25").
@@ -174,7 +181,7 @@ export class AIEngine {
             ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
             : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
-          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".`;
           const res = await this.handleRequest(prompt);
           resolve(res);
         } catch (e) {
@@ -208,8 +215,9 @@ CRITICAL REMINDER:
 1. If the player's action causes ANY change to their stats (Health, Energy, Inventory), you MUST include the updated character file content in your 'files' response.
 2. If NPCs or entities are modified, their files MUST be updated.
 3. The files listed above are your ONLY source of truth. Do not invent stats that contradict the files.
-4. Ensure all stats use the new dynamic probability engine modifier format.
-${username ? `5. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
+4. PROBABILITY ENGINE RULE: If the action is uncertain, has a chance of failure, or involves stats/skills, return "checks" and an empty narrative.
+5. Ensure all stats use the new dynamic probability engine modifier format.
+${username ? `6. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
 
           const res = await this.handleRequest(prompt);
           resolve(res);
