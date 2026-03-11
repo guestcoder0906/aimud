@@ -10,6 +10,7 @@ interface MapPanelProps {
 
 export default function MapPanel({ fileSystem, files, username, debugMode }: MapPanelProps) {
   const [mapData, setMapData] = useState<any>(null);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
 
   useEffect(() => {
     const content = fileSystem.read('CurrentMap.json');
@@ -24,7 +25,26 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
     }
   }, [fileSystem, files]); // Re-run when files change
 
-  if (!mapData || !mapData.areas) {
+  let pages: any[] = [];
+  if (mapData?.pages && Array.isArray(mapData.pages)) {
+    pages = mapData.pages;
+  } else if (mapData?.areas) {
+    // Backwards compatibility for single-page old format
+    pages = [{ name: 'World Map', ...mapData }];
+  }
+
+  if (pages.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-500 italic p-4 text-center">
+        Map data unavailable. The AI engine is generating the world...
+      </div>
+    );
+  }
+
+  const safePageIndex = Math.max(0, Math.min(currentPageIndex, pages.length - 1));
+  const currentPage = pages[safePageIndex];
+
+  if (!currentPage || !currentPage.areas) {
     return (
       <div className="flex items-center justify-center h-full text-gray-500 italic p-4 text-center">
         Map data unavailable. The AI engine is generating the world...
@@ -57,8 +77,8 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
 
   // Calculate bounds to scale the map
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  if (mapData.areas && mapData.areas.length > 0) {
-    mapData.areas.forEach((area: any) => {
+  if (currentPage.areas && currentPage.areas.length > 0) {
+    currentPage.areas.forEach((area: any) => {
       const parsedName = parseName(area.name);
       const isHidden = parsedName === 'Unknown Area' && !debugMode;
       if (isHidden) return; // Skip hidden areas for bounds calculation
@@ -169,16 +189,36 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
 
   return (
     <div className="flex flex-col h-full w-full bg-black relative">
-      <div className="absolute top-2 left-2 bg-black/80 text-xs text-blue-400 font-mono px-2 py-1 rounded border border-blue-900/50 z-10">
-        Scale: {mapData.scale || 'Unknown'}
+      <div className="absolute top-2 left-2 flex flex-col items-start gap-2 z-10 pointer-events-none">
+        <div className="bg-black/80 text-xs text-blue-400 font-mono px-2 py-1 rounded border border-blue-900/50">
+          Scale: {currentPage.scale || 'Unknown'}
+        </div>
+
+        {pages.length > 1 && (
+          <div className="flex gap-1 pointer-events-auto flex-wrap">
+            {pages.map((p, idx) => (
+              <button
+                key={idx}
+                onClick={() => setCurrentPageIndex(idx)}
+                className={`text-[10px] font-mono px-2 py-1 rounded border transition-colors ${idx === safePageIndex
+                    ? 'bg-blue-900/50 border-blue-500 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
+                    : 'bg-black/60 border-neutral-800 text-gray-400 hover:bg-neutral-800'
+                  }`}
+              >
+                {p.name || `Page ${idx + 1}`}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
       <svg
         className="w-full h-full"
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
       >
         {/* Draw Areas */}
-        {mapData.areas.map((area: any, i: number) => {
+        {currentPage.areas.map((area: any, i: number) => {
           const parsedName = parseName(area.name);
           const isHidden = parsedName === 'Unknown Area' && !debugMode;
 
@@ -255,7 +295,7 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
         })}
 
         {/* Draw Players */}
-        {mapData.players?.map((player: any, i: number) => {
+        {currentPage.players?.map((player: any, i: number) => {
           const px = Number(player.x) || 0;
           const py = Number(player.y) || 0;
           const pfacing = Number(player.facing) || 0;
