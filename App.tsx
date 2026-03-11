@@ -110,6 +110,10 @@ function App() {
           setShowCharacterCreation(true);
         } else {
           setShowCharacterCreation(false);
+          // Auto-mark hasCharacter to true if the file dropped
+          if (myCharacterFileExists && !me?.hasCharacter) {
+            // In v2 we could push this back to host/DB, but multiplayer.ts syncState handles it globally for now
+          }
         }
       },
       async (inputs) => {
@@ -457,8 +461,8 @@ function App() {
 
         <InputArea
           onSend={handleAction}
-          disabled={isProcessing || gameOver || isMyTurnReady || (gameMode === 'multiplayer' && roomState?.gameState === 'waiting_for_world' && !isHost)}
-          recommendations={autoRecommendationsEnabled ? recommendations : []}
+          disabled={isProcessing || gameOver || isMyTurnReady || showCharacterCreation || (gameMode === 'multiplayer' && roomState?.gameState !== 'playing')}
+          recommendations={(autoRecommendationsEnabled && !showCharacterCreation && (gameMode === 'singleplayer' || roomState?.gameState === 'playing')) ? recommendations : []}
         />
       </div>
 

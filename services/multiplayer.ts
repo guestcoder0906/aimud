@@ -237,6 +237,21 @@ export class MultiplayerService {
   }
 
   private checkTurnForHost(state: any) {
+    // If we're waiting for characters, see if everyone active has one now
+    if (state.gameState === 'character_creation') {
+      const activePlayers = state.players.filter((p: any) => p.status === 'active');
+      const allHaveCharacters = activePlayers.length > 0 && activePlayers.every((p: any) => p.hasCharacter);
+
+      if (allHaveCharacters) {
+        state.gameState = 'playing';
+        // Need to broadcast this state change down
+        this.supabase.from('rooms').update({ state }).eq('id', this.roomId).then(() => {
+          // State updated to playing seamlessly
+        });
+      }
+      return;
+    }
+
     if (state.gameState !== 'playing') return;
     const activePlayers = state.players.filter((p: any) => p.status === 'active' && p.hasCharacter);
     if (activePlayers.length > 0 && activePlayers.every((p: any) => p.isReady)) {
@@ -285,6 +300,15 @@ export class MultiplayerService {
       state.players.forEach((p: any) => p.isReady = false);
       state.pendingInputs = {};
       state.turnProcessed = false; // reset the flag
+    }
+
+    // Try to auto-start if ready
+    if (state.gameState === 'character_creation') {
+      const activePlayers = state.players.filter((p: any) => p.status === 'active');
+      const allHaveCharacters = activePlayers.length > 0 && activePlayers.every((p: any) => p.hasCharacter);
+      if (allHaveCharacters) {
+        state.gameState = 'playing';
+      }
     }
 
     await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);

@@ -135,7 +135,7 @@ export class AIEngine {
 
   async initialize(startingPrompt: string): Promise<AIResponse | null> {
     try {
-      const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world, rules, and guide. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
+      const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
       return await this.handleRequest(prompt);
     } catch (e) {
       console.error("Initialization failed", e);
