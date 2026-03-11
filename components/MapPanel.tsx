@@ -114,6 +114,18 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
     });
   }
 
+  // Also include players in bounds
+  if (currentPage.players && currentPage.players.length > 0) {
+    currentPage.players.forEach((p: any) => {
+      const px = Number(p.x) || 0;
+      const py = Number(p.y) || 0;
+      if (px < minX) minX = px;
+      if (py < minY) minY = py;
+      if (px > maxX) maxX = px;
+      if (py > maxY) maxY = py;
+    });
+  }
+
   // If no visible areas, set default bounds
   if (minX === Infinity || isNaN(minX) || isNaN(maxX) || isNaN(minY) || isNaN(maxY)) {
     minX = 0; minY = 0; maxX = 100; maxY = 100;
@@ -201,8 +213,8 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
                 key={idx}
                 onClick={() => setCurrentPageIndex(idx)}
                 className={`text-[10px] font-mono px-2 py-1 rounded border transition-colors ${idx === safePageIndex
-                    ? 'bg-blue-900/50 border-blue-500 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
-                    : 'bg-black/60 border-neutral-800 text-gray-400 hover:bg-neutral-800'
+                  ? 'bg-blue-900/50 border-blue-500 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
+                  : 'bg-black/60 border-neutral-800 text-gray-400 hover:bg-neutral-800'
                   }`}
               >
                 {p.name || `Page ${idx + 1}`}
@@ -321,7 +333,7 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
               {/* Player Triangle */}
               <polygon
                 points="-4,-4 6,0 -4,4"
-                fill={player.username === username ? "#3b82f6" : "#ef4444"}
+                fill={String(player.username).toLowerCase() === String(username).toLowerCase() ? "#3b82f6" : "#ef4444"}
                 transform={`translate(${px}, ${py}) rotate(${pfacing})`}
               />
               <text
