@@ -153,7 +153,30 @@ const backgrounds: TaggedWord[] = [
     { text: 'who can see the future', tags: ['fantasy'] },
     { text: 'who survived a catastrophe', tags: [] },
     { text: 'carrying a secret message', tags: [] },
-    { text: 'exiled from their homeland', tags: [] }
+    { text: 'exiled from their homeland', tags: [] },
+    { text: 'who was once a king', tags: ['fantasy'] },
+    { text: 'born in a test tube', tags: ['sci-fi'] },
+    { text: 'with a mechanical heart', tags: ['steampunk', 'sci-fi'] },
+    { text: 'who speaks with animals', tags: ['nature', 'fantasy'] },
+    { text: 'forgetting their own name', tags: [] }
+];
+
+const traits: TaggedWord[] = [
+    { text: 'extremely tall', tags: [] },
+    { text: 'covered in scars', tags: [] },
+    { text: 'always humming a low tune', tags: [] },
+    { text: 'with glowing eyes', tags: ['fantasy', 'sci-fi'] },
+    { text: 'obsessed with clocks', tags: ['steampunk'] },
+    { text: 'terrified of the dark', tags: ['horror'] },
+    { text: 'unfailing polite', tags: [] },
+    { text: 'with a missing finger', tags: [] },
+    { text: 'who smells of lavender', tags: ['nature'] },
+    { text: 'constantly twitching', tags: [] },
+    { text: 'wearing heavy iron chains', tags: ['fantasy'] },
+    { text: 'with a robotic arm', tags: ['sci-fi', 'steampunk'] },
+    { text: 'always carrying a withered rose', tags: ['horror', 'nature'] },
+    { text: 'speaking only in whispers', tags: [] },
+    { text: 'with skin like marble', tags: ['fantasy'] }
 ];
 
 const weirdFacts: TaggedWord[] = [
@@ -249,12 +272,14 @@ export class SuggestionGenerator {
         while (suggestions.length < count) {
             const theme = mainThemes[Math.floor(Math.random() * mainThemes.length)];
 
+            const charDescription = `CHARACTER: A ${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)} ${getRandomCompatible(traits, theme)} ${getRandomCompatible(backgrounds, theme)}.`;
+
             const templates = [
-                () => `A ${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)} in ${getRandomCompatible(settings, theme)} seeking ${getRandomCompatible(goals, theme)}.`,
-                () => `You are a ${getRandomCompatible(classes, theme)} ${getRandomCompatible(backgrounds, theme)} exploring ${getRandomCompatible(settings, theme)}.`,
-                () => `Start as a ${getRandomCompatible(classes, theme)} in ${getRandomCompatible(settings, theme)} where ${getRandomCompatible(weirdFacts, theme)}.`,
-                () => `A ${getRandomCompatible(adjectives, theme)} journey of a ${getRandomCompatible(classes, theme)} trying to find ${getRandomCompatible(goals, theme)} in ${getRandomCompatible(settings, theme)}.`,
-                () => `As a ${getRandomCompatible(classes, theme)}, you must survive ${getRandomCompatible(settings, theme)} plagued by ${getRandomCompatible(dangers, theme)}.`
+                () => `${charDescription} SCENARIO: Exploring ${getRandomCompatible(settings, theme)} seeking ${getRandomCompatible(goals, theme)}.`,
+                () => `${charDescription} SCENARIO: You find yourself in ${getRandomCompatible(settings, theme)}, where ${getRandomCompatible(weirdFacts, theme)}.`,
+                () => `${charDescription} SCENARIO: Survive ${getRandomCompatible(settings, theme)} plagued by ${getRandomCompatible(dangers, theme)}.`,
+                () => `${charDescription} SCENARIO: A journey through ${getRandomCompatible(settings, theme)} to find ${getRandomCompatible(goals, theme)}.`,
+                () => `${charDescription} SCENARIO: Caught in a conflict in ${getRandomCompatible(names, theme)} where ${getRandomCompatible(creatures, theme)} roam.`
             ];
 
             const template = templates[Math.floor(Math.random() * templates.length)];

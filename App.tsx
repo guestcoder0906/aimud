@@ -311,10 +311,10 @@ function App() {
       try {
         let result;
         if (!isInitialized) {
-          result = await aiEngine.initialize(text);
+          result = await aiEngine.initialize(text, username || 'Player');
           setIsInitialized(true);
         } else {
-          result = await aiEngine.processAction(text);
+          result = await aiEngine.processAction(text, username || 'Player');
         }
 
         if (result) {

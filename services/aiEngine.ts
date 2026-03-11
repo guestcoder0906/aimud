@@ -136,11 +136,15 @@ export class AIEngine {
 
   private taskQueue: Promise<any> = Promise.resolve();
 
-  async initialize(startingPrompt: string): Promise<AIResponse | null> {
+  async initialize(startingPrompt: string, username?: string): Promise<AIResponse | null> {
     return new Promise((resolve) => {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
-          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.\n\nCRITICAL INSTRUCTION: You MUST NOT return any file named with "CharacterName-USERNAME.txt" format during this world generation phase. Wait for the explicit character prompt next.`;
+          const charRequirement = username
+            ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
+            : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
+
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: NO DICE NOTATION. Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
           const res = await this.handleRequest(prompt);
           resolve(res);
         } catch (e) {
@@ -151,7 +155,7 @@ export class AIEngine {
     });
   }
 
-  async processAction(action: string): Promise<AIResponse | null> {
+  async processAction(action: string, username?: string): Promise<AIResponse | null> {
     return new Promise((resolve) => {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
@@ -160,7 +164,8 @@ export class AIEngine {
             .map(([name, content]) => `=== ${name} ===\n${content}`)
             .join('\n\n');
 
-          const prompt = `Current files:\n${context}\n\nPlayer action: ${action}\n\nProcess this action. If it requires probability engine calculations (success/failure/damage multiplier), return "checks". If not, return "narrative" and updates. Remember: NO DICE NOTATION. Make all file updates extremely detailed and long. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds.`;
+          const userHeader = username ? `[Player: ${username}]\n` : '';
+          const prompt = `Current files:\n${context}\n\n${userHeader}Player action: ${action}\n\nProcess this action. If it requires probability engine calculations (success/failure/damage multiplier), return "checks". If not, return "narrative" and updates. Remember: NO DICE NOTATION. Make all file updates extremely detailed and long. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. ${username ? `CRITICAL: If a character file for "${username}" does not exist in the current files, you MUST create it immediately as part of this response.` : ''}`;
 
           const res = await this.handleRequest(prompt);
           resolve(res);
