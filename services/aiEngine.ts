@@ -22,19 +22,13 @@ STAT PERSISTENCE RULE (CRITICAL):
 - If an NPC is wounded, you MUST update their file (or the shared group file).
 - NEVER assume the system will "remember" a stat change unless it is written into a file.
 
-ENTITY FILE SCHEMA (CRITICAL):
+ENTITY FILE SCHEMA:
 All character/NPC/Entity files MUST follow this structured format for consistency:
 ---
 [NAME & DESCRIPTION]
 - Full Name: ...
 - Description: (Extensive, detailed physical & psychological profile)
 - Physical Dimensions: (Size, Height, Weight, Wingspan, etc.)
-- Tier/Level: (e.g., Newbie, Intermediate, Master, etc.)
-
-[CAPABILITIES & LIMITATIONS]
-- Ability 1: (Name, Quantitative limits like weight/range/duration/type, specific types allowed)
-- Ability 2: ...
-- Restricted From: (Explicit list of what they CANNOT do yet based on their Tier)
 
 [STATS & MODIFIERS]
 - Health: (Current / Max)
@@ -58,30 +52,17 @@ GROUP ENTITY RULE:
 - Inside this shared file, explicitly list the individuals, their specific names/identifiers (e.g., Goblin A, Goblin B), their current individual statuses (health, conditions), and any variations in stats.
 - Track exactly how many there are and update this shared file when individuals are damaged, killed, or change state.
 
-SPECIFICITY & LIMITATIONS RULE (CRITICAL):
-- There MUST be NO vagueness in magic, tech, or abilities.
-- Every capability (spell, skill, tech tool) MUST have defined, quantifiable limitations in its description.
-- Examples of required limitations:
-  * Weight limits (e.g., "Transmutation (Newbie): Max 10 lbs object")
-  * Type restrictions (e.g., "Elemental Focus: Only Fire and Ice")
-  * Quantitative Bounds: Range in meters, duration in seconds, volume in liters, number of targets.
-  * Complexity tiers: A "Newbie" cannot perform "Master" level tasks regardless of the roll result if the complexity exceeds their current Tier.
-- If a player attempts an action that exceeds their defined limits (e.g., lifting 50 lbs with a 10 lb limit spell), you MUST either:
-  1. Fail the action automatically with a narrative explanation of the mechanical limit.
-  2. Require a "Critical/Extreme" check (900+) that represents pushing past safe limits, with high risk of self-damage/exhaustion.
-
 PROBABILITY ENGINE RULE (CRITICAL):
-- You MUST use the "checks" array for ANY action that has a chance of failure or involves stats.
-- Before requesting a check, VERIFY if the action is within the entity's listed [CAPABILITIES & LIMITATIONS].
-- If it is outside their limits (e.g. wrong type of magic), DO NOT even request a check; narrate the specific mechanical failure based on their current Tier.
+- You MUST use the "checks" array for ANY action that has a chance of failure, involves a character's stats, or has an uncertain outcome.
+- NEVER decide the outcome of an uncertain action yourself in the narrative. ALWAYS request a check from the probability engine (0-1000).
 - Actions that REQUIRE a check:
-  * Combat (Attacks, defense, dodging)
+  * Combat (Attacking, defending, dodging, using abilities)
   * Stealth and Detection
   * Social manipulation (Persuasion, Intimidation, Deception)
   * Physical feats (Climbing, jumping, lifting, swimming)
   * Magic or Technical operations with risk
   * Resistance against effects or toxins
-- If an action should be modified by stats (e.g., Agility, Strength), you MUST define thresholds in the "checks" object that reflect those stats and the specific Tier limitations.
+- If an action should be modified by stats (e.g., Agility, Strength), you MUST define thresholds in the "checks" object that reflect those stats.
 - If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
 
 DYNAMIC STATS RULE (CRITICAL):
@@ -98,6 +79,11 @@ DYNAMIC STATS RULE (CRITICAL):
 FILE DETAIL RULE (CRITICAL):
 - ALL files (character files, locations, items, WorldRules, etc.) MUST be highly detailed, extensive, specific, and accurate. 
 - Do not write vague or short descriptions. Include deep lore, precise physical dimensions, exact quantitative stats, psychological profiles for NPCs, and exhaustive inventory lists.
+- MAGIC & ABILITIES (CRITICAL): If a character or item has magic or special abilities, you MUST define them with EXTREME precision. 
+  * NEVER use vague terms like "can do magic".
+  * Define EXACT limits, ranges, target caps, weight limits (e.g., "can telekinetically lift up to 10 lbs exactly").
+  * Detail explicit energy costs per use.
+  * Define specific elemental types, physics limitations, and what exactly the magic CANNOT do.
 - You MUST explicitly include the physical size, dimensions, and weight for EVERY character, creature, NPC, and item in their respective files.
 - Make the files long and comprehensive.
 - IMPORTANT MINIMIZATION RULE: ONLY include files in the 'files' object if they are NEW, MODIFIED, or DELETED. If a file is completely unchanged, DO NOT include it in the response at all (it will persist automatically). NEVER use null to mean 'no change' (null means DELETE). NEVER truncate file content with ellipses (...).
@@ -205,7 +191,7 @@ export class AIEngine {
             ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
             : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
-          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all entities and abilities follow the SPECIFICITY & LIMITATIONS RULE (Explicit Tiers and Quantifiable Limits). If the initialization involves any uncertain event, return "checks".`;
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".`;
           const res = await this.handleRequest(prompt);
           resolve(res);
         } catch (e) {
@@ -283,7 +269,12 @@ ${username ? `6. If a character file for "${username}" does not exist, you MUST 
         `Check: ${r.name}\nReason: ${r.description}\nRoll: ${r.roll} / 1000\nThresholds: ${JSON.stringify(r.thresholds)}\nRESULT: ${r.outcome}`
       ).join('\n\n');
 
-      const followUpPrompt = `PREVIOUS CONTEXT: ${userPrompt}\n\n[SYSTEM: Probability Engine Results]\n\n${resultReport}\n\nBased on these FAIR and FINAL results, generate the highly detailed narrative and extensive file updates. Calculate exact dynamic outcomes (e.g., damage = base * probability result) WITHOUT using dice notation. Include the Check Name and Result (e.g. "[Jump: Failure]") in the narrative, but do NOT state the raw roll numbers.`;
+      const fullDetailsHtml = results.map(r =>
+        `[Probability Check: ${r.name} - Result: ${r.outcome} | Roll: ${r.roll}/1000 | Thresholds: ${JSON.stringify(r.thresholds).replace(/"/g, '&quot;')}]`
+      ).join(' ');
+
+      const followUpPrompt = `PREVIOUS CONTEXT: ${userPrompt}\n\n[SYSTEM: Probability Engine Results]\n\n${resultReport}\n\nBased on these FAIR and FINAL results, generate the highly detailed narrative and extensive file updates. Calculate exact dynamic outcomes (e.g., damage = base * probability result) WITHOUT using dice notation. 
+      CRITICAL: You MUST include the exact text "${fullDetailsHtml}" at the very beginning or end of your narrative so the player can click to see the full mathematical details. Do not alter the formatting of that string. Include the Check Name and Result (e.g. "[Jump: Failure]") natively in the narrative text as well.`;
 
       // We make a fresh call with the context combined, as we don't maintain a full chat history object here 
       // (The FS is the history source of truth).

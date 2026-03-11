@@ -49,7 +49,26 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
       return `<span class="${color} px-1 rounded border font-semibold">${match}</span>`;
     });
 
-    // 4. Handle [Object] links
+    // 4. Handle [Probability Check: ...] for detailed math
+    processed = processed.replace(/\[Probability Check:\s*(.*?)\s*-\s*Result:\s*(.*?)\s*\|\s*Roll:\s*(.*?)\s*\|\s*Thresholds:\s*(.*?)\]/g, (match, name, result, roll, thresholds) => {
+      const isSuccess = result.toLowerCase().includes('success');
+      const baseColor = isSuccess ? 'text-green-300' : 'text-red-300';
+
+      return `<span class="group relative ${baseColor} border-b border-dashed border-current select-none ml-1 text-xs cursor-help">
+        [Math: ${name}]
+        <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-neutral-900 border border-neutral-700 rounded shadow-xl text-xs text-gray-300 z-50 pointer-events-none format-pre text-left">
+          <div class="font-bold text-blue-400 border-b border-neutral-800 pb-1 mb-1">${name}</div>
+          <div class="grid grid-cols-2 gap-1 mb-1">
+            <span class="text-gray-500">Roll:</span> <span class="text-white">${roll}</span>
+            <span class="text-gray-500">Result:</span> <span class="${baseColor} font-bold">${result}</span>
+          </div>
+          <div class="text-gray-500 mb-1 border-t border-neutral-800 pt-1">Thresholds:</div>
+          <div class="font-mono text-[10px] whitespace-pre-wrap">${thresholds.replace(/&quot;/g, '"')}</div>
+        </span>
+      </span>`;
+    });
+
+    // 5. Handle [Object] links
     processed = processed.replace(/(<[^>]+>)|\[([^\]]+)\]/g, (match, htmlTag, ref) => {
       if (htmlTag) return htmlTag;
       return `<span class="text-yellow-400 hover:text-yellow-200 hover:underline cursor-pointer" data-ref="${ref}">${ref}</span>`;
