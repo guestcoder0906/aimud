@@ -1,92 +1,263 @@
 
-const adjectives = [
-    'cosmic', 'gritty', 'lush', 'decaying', 'neon-drenched', 'frozen', 'floating', 'ancient', 'sentient',
-    'crystalline', 'radioactive', 'underwater', 'steam-powered', 'volcanic', 'dreamlike', 'monolithic',
-    'overgrown', 'shadow-infested', 'golden', 'hollow', 'cybernetic', 'eldritch', 'mechanical', 'spectral',
-    'verdant', 'desolate', 'opulent', 'decayed', 'eternal', 'fractal', 'pulsating', 'astral', 'obsidian',
-    'forgotten', 'forbidden', 'infinite', 'microscopic', 'primordial', 'ruined', 'shimmering'
+interface TaggedWord {
+    text: string;
+    tags: string[];
+}
+
+const adjectives: TaggedWord[] = [
+    { text: 'cosmic', tags: ['sci-fi', 'space'] },
+    { text: 'gritty', tags: [] },
+    { text: 'lush', tags: ['nature'] },
+    { text: 'decaying', tags: [] },
+    { text: 'neon-drenched', tags: ['sci-fi'] },
+    { text: 'frozen', tags: [] },
+    { text: 'floating', tags: ['fantasy'] },
+    { text: 'ancient', tags: ['fantasy'] },
+    { text: 'sentient', tags: ['sci-fi'] },
+    { text: 'crystalline', tags: ['fantasy', 'sci-fi'] },
+    { text: 'radioactive', tags: ['sci-fi'] },
+    { text: 'underwater', tags: ['water'] },
+    { text: 'steam-powered', tags: ['steampunk'] },
+    { text: 'volcanic', tags: ['dry'] },
+    { text: 'dreamlike', tags: ['fantasy'] },
+    { text: 'monolithic', tags: [] },
+    { text: 'overgrown', tags: ['nature'] },
+    { text: 'shadow-infested', tags: ['fantasy', 'horror'] },
+    { text: 'golden', tags: [] },
+    { text: 'hollow', tags: [] },
+    { text: 'cybernetic', tags: ['sci-fi'] },
+    { text: 'eldritch', tags: ['fantasy', 'horror'] },
+    { text: 'mechanical', tags: ['steampunk', 'sci-fi'] },
+    { text: 'spectral', tags: ['fantasy', 'horror'] },
+    { text: 'verdant', tags: ['nature'] },
+    { text: 'desolate', tags: [] },
+    { text: 'opulent', tags: [] },
+    { text: 'eternal', tags: [] },
+    { text: 'fractal', tags: ['sci-fi'] },
+    { text: 'astral', tags: ['fantasy', 'space'] },
+    { text: 'obsidian', tags: [] },
+    { text: 'forgotten', tags: [] },
+    { text: 'shimmering', tags: [] }
 ];
 
-const classes = [
-    'detective', 'mage', 'scavenger', 'knight', 'bio-hacker', 'priest', 'mercenary', 'scholar', 'pilot',
-    'druid', 'monk', 'engineer', 'assassin', 'bard', 'merchant', 'chronomancer', 'necro-technician',
-    'spacer', 'gladiator', 'rogue', 'alchemist', 'bounty hunter', 'diplomat', 'exorcist', 'inquisitor',
-    'navigator', 'oracle', 'paladin', 'ranger', 'technomancer', 'warden', 'warlock', 'witch', 'samurai',
-    'cyber-samurai', 'void-walker', 'dream-weaver', 'star-sailor', 'runesmith', 'beast-master'
+const classes: TaggedWord[] = [
+    { text: 'detective', tags: ['steampunk', 'sci-fi'] },
+    { text: 'mage', tags: ['fantasy'] },
+    { text: 'scavenger', tags: [] },
+    { text: 'knight', tags: ['fantasy'] },
+    { text: 'bio-hacker', tags: ['sci-fi'] },
+    { text: 'priest', tags: [] },
+    { text: 'mercenary', tags: [] },
+    { text: 'scholar', tags: [] },
+    { text: 'pilot', tags: ['sci-fi', 'space'] },
+    { text: 'druid', tags: ['fantasy', 'nature'] },
+    { text: 'monk', tags: ['fantasy'] },
+    { text: 'engineer', tags: ['steampunk', 'sci-fi'] },
+    { text: 'assassin', tags: [] },
+    { text: 'bard', tags: ['fantasy'] },
+    { text: 'merchant', tags: [] },
+    { text: 'chronomancer', tags: ['fantasy', 'sci-fi'] },
+    { text: 'necro-technician', tags: ['sci-fi', 'horror'] },
+    { text: 'spacer', tags: ['sci-fi', 'space'] },
+    { text: 'gladiator', tags: ['fantasy'] },
+    { text: 'rogue', tags: ['fantasy'] },
+    { text: 'alchemist', tags: ['fantasy', 'steampunk'] },
+    { text: 'bounty hunter', tags: ['sci-fi'] },
+    { text: 'diplomat', tags: [] },
+    { text: 'exorcist', tags: ['fantasy', 'horror'] },
+    { text: 'inquisitor', tags: ['fantasy'] },
+    { text: 'navigator', tags: ['space', 'sci-fi'] },
+    { text: 'oracle', tags: ['fantasy'] },
+    { text: 'paladin', tags: ['fantasy'] },
+    { text: 'ranger', tags: ['nature', 'fantasy'] },
+    { text: 'technomancer', tags: ['sci-fi', 'fantasy'] },
+    { text: 'warden', tags: [] },
+    { text: 'warlock', tags: ['fantasy'] },
+    { text: 'witch', tags: ['fantasy'] },
+    { text: 'samurai', tags: ['fantasy', 'sci-fi'] },
+    { text: 'cyber-samurai', tags: ['sci-fi'] },
+    { text: 'void-walker', tags: ['space', 'sci-fi', 'fantasy'] },
+    { text: 'dream-weaver', tags: ['fantasy'] },
+    { text: 'runesmith', tags: ['fantasy'] },
+    { text: 'beast-master', tags: ['nature', 'fantasy'] }
 ];
 
-const settings = [
-    'Neo-Tokyo', 'a dying nebula', 'an orbital prison', 'a subterranean jungle', 'a Victorian cloud-city',
-    'the belly of a leviathan', 'a desert of glass', 'a clockwork fortress', 'a sentient library',
-    'a lunar colony', 'the ruins of Atlantis', 'a digital afterlife', 'a parasitic planet',
-    'a canyon of whispering bones', 'a sky-ocean', 'a mega-mall at the end of time', 'the edge of a black hole',
-    'a hive-world', 'a floating monastery', 'a gravity-defying archipelago', 'a world made of circuitry',
-    'a prehistoric asteroid', 'a valley of giant mushrooms', 'a city inside a giant robot',
-    'a labyrinthine salt mine', 'a forest of giant crystals', 'a frozen ocean on Europa',
-    'a steam-punk London', 'a Mars colony in revolt', 'a haunted space station'
+const settings: TaggedWord[] = [
+    { text: 'Neo-Tokyo', tags: ['sci-fi', 'urban'] },
+    { text: 'a dying nebula', tags: ['sci-fi', 'space'] },
+    { text: 'an orbital prison', tags: ['sci-fi', 'space'] },
+    { text: 'a subterranean jungle', tags: ['nature'] },
+    { text: 'a Victorian cloud-city', tags: ['steampunk'] },
+    { text: 'the belly of a leviathan', tags: ['fantasy', 'water'] },
+    { text: 'a desert of glass', tags: ['dry'] },
+    { text: 'a clockwork fortress', tags: ['steampunk', 'fantasy'] },
+    { text: 'a sentient library', tags: ['fantasy'] },
+    { text: 'a lunar colony', tags: ['sci-fi', 'space'] },
+    { text: 'the ruins of Atlantis', tags: ['fantasy', 'water'] },
+    { text: 'a digital afterlife', tags: ['sci-fi'] },
+    { text: 'a parasitic planet', tags: ['sci-fi', 'space', 'horror'] },
+    { text: 'a canyon of whispering bones', tags: ['fantasy', 'horror'] },
+    { text: 'a sky-ocean', tags: ['fantasy', 'water'] },
+    { text: 'a mega-mall at the end of time', tags: ['sci-fi'] },
+    { text: 'the edge of a black hole', tags: ['sci-fi', 'space'] },
+    { text: 'a hive-world', tags: ['sci-fi'] },
+    { text: 'a floating monastery', tags: ['fantasy'] },
+    { text: 'a gravity-defying archipelago', tags: ['fantasy'] },
+    { text: 'a world made of circuitry', tags: ['sci-fi'] },
+    { text: 'a prehistoric asteroid', tags: ['space'] },
+    { text: 'a valley of giant mushrooms', tags: ['nature', 'fantasy'] },
+    { text: 'a city inside a giant robot', tags: ['sci-fi', 'steampunk'] },
+    { text: 'a labyrinthine salt mine', tags: [] },
+    { text: 'a forest of giant crystals', tags: ['nature', 'fantasy'] },
+    { text: 'a frozen ocean on Europa', tags: ['sci-fi', 'space', 'water'] },
+    { text: 'a steam-punk London', tags: ['steampunk'] },
+    { text: 'a Mars colony in revolt', tags: ['sci-fi', 'space'] },
+    { text: 'a haunted space station', tags: ['sci-fi', 'space', 'horror'] }
 ];
 
-const goals = [
-    'a lost memory', 'the spark of creation', 'a cure for a planet-wide plague', 'revenge against a god',
-    'the key to the multiverse', 'the last remaining seed', 'a way home', 'the hidden treasure of a dead star',
-    'a forbidden spell', 'a legendary artifact', 'a missing sibling', 'the truth behind the Veil',
-    'an audience with the Emperor', 'the ultimate weapon', 'a way to stop time', 'the source of the corruption',
-    'a mythical beast', 'a sunken city', 'the heart of the machine', 'a lost starship'
+const goals: TaggedWord[] = [
+    { text: 'a lost memory', tags: [] },
+    { text: 'the spark of creation', tags: ['fantasy', 'sci-fi'] },
+    { text: 'a cure for a planet-wide plague', tags: ['sci-fi'] },
+    { text: 'revenge against a god', tags: ['fantasy'] },
+    { text: 'the key to the multiverse', tags: ['sci-fi', 'fantasy'] },
+    { text: 'the last remaining seed', tags: ['nature'] },
+    { text: 'a way home', tags: [] },
+    { text: 'the hidden treasure of a dead star', tags: ['sci-fi', 'space'] },
+    { text: 'a forbidden spell', tags: ['fantasy'] },
+    { text: 'a legendary artifact', tags: ['fantasy'] },
+    { text: 'a missing sibling', tags: [] },
+    { text: 'the truth behind the Veil', tags: ['fantasy', 'horror'] },
+    { text: 'an audience with the Emperor', tags: [] },
+    { text: 'the ultimate weapon', tags: [] },
+    { text: 'a way to stop time', tags: ['fantasy', 'sci-fi'] },
+    { text: 'the source of the corruption', tags: ['fantasy', 'horror'] },
+    { text: 'a mythical beast', tags: ['fantasy'] },
+    { text: 'a sunken city', tags: ['water', 'fantasy'] },
+    { text: 'the heart of the machine', tags: ['sci-fi', 'steampunk'] },
+    { text: 'a lost starship', tags: ['sci-fi', 'space'] }
 ];
 
-const backgrounds = [
-    'from a noble house', 'raised by wolves', 'who escaped a slave camp', 'with a mysterious tattoo',
-    'seeking redemption', 'haunted by ghosts', 'trained in secret', 'who possesses a cursed item',
-    'burdened by debt', 'with a photographic memory', 'born under a blood moon', 'who can see the future',
-    'who survived a catastrophe', 'carrying a secret message', 'exiled from their homeland'
+const backgrounds: TaggedWord[] = [
+    { text: 'from a noble house', tags: [] },
+    { text: 'raised by wolves', tags: ['nature'] },
+    { text: 'who escaped a slave camp', tags: [] },
+    { text: 'with a mysterious tattoo', tags: ['fantasy'] },
+    { text: 'seeking redemption', tags: [] },
+    { text: 'haunted by ghosts', tags: ['horror', 'fantasy'] },
+    { text: 'trained in secret', tags: [] },
+    { text: 'who possesses a cursed item', tags: ['fantasy', 'horror'] },
+    { text: 'burdened by debt', tags: [] },
+    { text: 'with a photographic memory', tags: ['sci-fi'] },
+    { text: 'born under a blood moon', tags: ['fantasy', 'horror'] },
+    { text: 'who can see the future', tags: ['fantasy'] },
+    { text: 'who survived a catastrophe', tags: [] },
+    { text: 'carrying a secret message', tags: [] },
+    { text: 'exiled from their homeland', tags: [] }
 ];
 
-const weirdFacts = [
-    'gravity is optional', 'time flows backwards', 'the sun is a giant eye', 'everything is made of candy',
-    'magic requires sacrifice', 'dreams manifest as reality', 'the sky is a mirror', 'people communicate via smell',
-    'the trees walk', 'shadows have their own lives', 'the earth is hollow', 'nothing ever dies',
-    'sound can be seen', 'colors are poisonous', 'memory is currency'
+const weirdFacts: TaggedWord[] = [
+    { text: 'gravity is optional', tags: ['sci-fi', 'fantasy'] },
+    { text: 'time flows backwards', tags: ['sci-fi', 'fantasy'] },
+    { text: 'the sun is a giant eye', tags: ['horror', 'fantasy'] },
+    { text: 'everything is made of candy', tags: [] },
+    { text: 'magic requires sacrifice', tags: ['fantasy'] },
+    { text: 'dreams manifest as reality', tags: ['fantasy'] },
+    { text: 'the sky is a mirror', tags: [] },
+    { text: 'people communicate via smell', tags: [] },
+    { text: 'the trees walk', tags: ['nature', 'fantasy'] },
+    { text: 'shadows have their own lives', tags: ['horror', 'fantasy'] },
+    { text: 'the earth is hollow', tags: [] },
+    { text: 'nothing ever dies', tags: [] },
+    { text: 'sound can be seen', tags: [] },
+    { text: 'colors are poisonous', tags: [] },
+    { text: 'memory is currency', tags: ['sci-fi'] }
 ];
 
-const creatures = [
-    'mechanical dragons', 'sentient clouds', 'space whales', 'clockwork spiders', 'ghostly wolves',
-    'crystalline giants', 'floating jellyfish', 'shadow beasts', 'hyper-intelligent apes', 'star-children',
-    'lava eels', 'void-raptors', 'bio-luminescent insects', 'ancient golems', 'telepathic spores'
+const creatures: TaggedWord[] = [
+    { text: 'mechanical dragons', tags: ['steampunk', 'fantasy'] },
+    { text: 'sentient clouds', tags: ['sci-fi', 'fantasy'] },
+    { text: 'space whales', tags: ['space', 'sci-fi'] },
+    { text: 'clockwork spiders', tags: ['steampunk'] },
+    { text: 'ghostly wolves', tags: ['fantasy', 'horror'] },
+    { text: 'crystalline giants', tags: ['fantasy'] },
+    { text: 'floating jellyfish', tags: ['water', 'nature'] },
+    { text: 'shadow beasts', tags: ['fantasy', 'horror'] },
+    { text: 'hyper-intelligent apes', tags: ['sci-fi'] },
+    { text: 'star-children', tags: ['space', 'sci-fi'] },
+    { text: 'lava eels', tags: ['dry'] },
+    { text: 'void-raptors', tags: ['space', 'sci-fi'] },
+    { text: 'bio-luminescent insects', tags: ['nature'] },
+    { text: 'ancient golems', tags: ['fantasy'] },
+    { text: 'telepathic spores', tags: ['sci-fi', 'nature'] }
 ];
 
-const dangers = [
-    'a spreading void', 'a rogue AI', 'an ancient curse', 'a planetary collision', 'a civil war',
-    'a swarm of nanobots', 'a cosmic entity', 'a reality-warping virus', 'a solar storm', 'a cult of doom',
-    'a legendary beast', 'a tyrannical overlord', 'a temporal rift', 'a toxic atmosphere', 'a localized gravity collapse'
+const dangers: TaggedWord[] = [
+    { text: 'a spreading void', tags: ['horror', 'space'] },
+    { text: 'a rogue AI', tags: ['sci-fi'] },
+    { text: 'an ancient curse', tags: ['fantasy', 'horror'] },
+    { text: 'a planetary collision', tags: ['space', 'sci-fi'] },
+    { text: 'a civil war', tags: [] },
+    { text: 'a swarm of nanobots', tags: ['sci-fi'] },
+    { text: 'a cosmic entity', tags: ['space', 'horror'] },
+    { text: 'a reality-warping virus', tags: ['sci-fi'] },
+    { text: 'a solar storm', tags: ['space', 'sci-fi'] },
+    { text: 'a cult of doom', tags: ['horror'] },
+    { text: 'a legendary beast', tags: ['fantasy'] },
+    { text: 'a tyrannical overlord', tags: [] },
+    { text: 'a temporal rift', tags: ['sci-fi', 'fantasy'] },
+    { text: 'a toxic atmosphere', tags: ['sci-fi'] },
+    { text: 'a localized gravity collapse', tags: ['sci-fi', 'space'] }
 ];
 
-const names = [
-    'Aethelgard', 'Neo-Prime', 'The Iron Reach', 'Zion-9', 'Othos', 'Xylos', 'The Glimmer', 'Nova Terra',
-    'Elysium', 'The Silent Maw', 'Void-Station Delta', 'Kaldwin’s Peak', 'The Verdant Core', 'Obsidia',
-    'Aetheria', 'Solstice', 'The Rust Wastes', 'Chronos', 'The Azure Coast', 'Titan’s Cradle'
+const names: TaggedWord[] = [
+    { text: 'Aethelgard', tags: ['fantasy'] },
+    { text: 'Neo-Prime', tags: ['sci-fi'] },
+    { text: 'The Iron Reach', tags: ['steampunk', 'sci-fi'] },
+    { text: 'Zion-9', tags: ['sci-fi'] },
+    { text: 'Othos', tags: [] },
+    { text: 'Xylos', tags: [] },
+    { text: 'The Glimmer', tags: [] },
+    { text: 'Nova Terra', tags: ['sci-fi', 'space'] },
+    { text: 'Elysium', tags: [] },
+    { text: 'The Silent Maw', tags: ['horror'] },
+    { text: 'Void-Station Delta', tags: ['sci-fi', 'space'] },
+    { text: 'Kaldwin’s Peak', tags: [] },
+    { text: 'The Verdant Core', tags: ['nature'] },
+    { text: 'Obsidia', tags: [] },
+    { text: 'Aetheria', tags: ['fantasy'] },
+    { text: 'Solstice', tags: [] },
+    { text: 'The Rust Wastes', tags: ['steampunk', 'sci-fi'] },
+    { text: 'Chronos', tags: [] },
+    { text: 'The Azure Coast', tags: ['water'] },
+    { text: 'Titan’s Cradle', tags: ['space'] }
 ];
 
-function getRandom(arr: string[]): string {
-    return arr[Math.floor(Math.random() * arr.length)];
+const mainThemes = ['fantasy', 'sci-fi', 'steampunk', 'horror', 'nature'];
+
+function getRandomCompatible(arr: TaggedWord[], theme: string): string {
+    const compatible = arr.filter(item => item.tags.length === 0 || item.tags.includes(theme));
+    const pool = compatible.length > 0 ? compatible : arr;
+    return pool[Math.floor(Math.random() * pool.length)].text;
 }
 
 export class SuggestionGenerator {
     static generateSinglePlayer(): string[] {
         const suggestions: string[] = [];
-        const templates = [
-            () => `A ${getRandom(adjectives)} ${getRandom(classes)} in ${getRandom(settings)} seeking ${getRandom(goals)}.`,
-            () => `You are a ${getRandom(classes)} ${getRandom(backgrounds)} exploring ${getRandom(settings)}.`,
-            () => `Start as a ${getRandom(classes)} in ${getRandom(settings)} where ${getRandom(weirdFacts)}.`,
-            () => `A ${getRandom(adjectives)} journey of a ${getRandom(classes)} trying to find ${getRandom(goals)} in ${getRandom(settings)}.`,
-            () => `As a ${getRandom(classes)}, you must survive ${getRandom(settings)} plagued by ${getRandom(dangers)}.`,
-            () => `Playing a ${getRandom(classes)} who is ${getRandom(backgrounds)}, you arrive at ${getRandom(settings)}.`,
-            () => `In ${getRandom(settings)}, a ${getRandom(classes)} seeks ${getRandom(goals)}.`,
-            () => `The story of a ${getRandom(adjectives)} ${getRandom(classes)} in the heart of ${getRandom(settings)}.`
-        ];
+        const count = 3;
 
-        const count = 5;
         while (suggestions.length < count) {
-            const template = getRandom(templates as any) as any;
+            const theme = mainThemes[Math.floor(Math.random() * mainThemes.length)];
+
+            const templates = [
+                () => `A ${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)} in ${getRandomCompatible(settings, theme)} seeking ${getRandomCompatible(goals, theme)}.`,
+                () => `You are a ${getRandomCompatible(classes, theme)} ${getRandomCompatible(backgrounds, theme)} exploring ${getRandomCompatible(settings, theme)}.`,
+                () => `Start as a ${getRandomCompatible(classes, theme)} in ${getRandomCompatible(settings, theme)} where ${getRandomCompatible(weirdFacts, theme)}.`,
+                () => `A ${getRandomCompatible(adjectives, theme)} journey of a ${getRandomCompatible(classes, theme)} trying to find ${getRandomCompatible(goals, theme)} in ${getRandomCompatible(settings, theme)}.`,
+                () => `As a ${getRandomCompatible(classes, theme)}, you must survive ${getRandomCompatible(settings, theme)} plagued by ${getRandomCompatible(dangers, theme)}.`
+            ];
+
+            const template = templates[Math.floor(Math.random() * templates.length)];
             const res = template();
             if (!suggestions.includes(res)) {
                 suggestions.push(res);
@@ -97,20 +268,20 @@ export class SuggestionGenerator {
 
     static generateMultiplayer(): string[] {
         const suggestions: string[] = [];
-        const templates = [
-            () => `A ${getRandom(adjectives)} world in ${getRandom(settings)} where ${getRandom(weirdFacts)}.`,
-            () => `The ${getRandom(adjectives)} land of ${getRandom(names)}, home to ${getRandom(creatures)} and ${getRandom(dangers)}.`,
-            () => `Exploration of ${getRandom(settings)} after ${getRandom(dangers)} changed everything.`,
-            () => `A high-stakes adventure in ${getRandom(settings)} featuring ${getRandom(creatures)}.`,
-            () => `Conflict in ${getRandom(names)} between ${getRandom(creatures)} and ${getRandom(creatures)}.`,
-            () => `A ${getRandom(adjectives)} expedition to ${getRandom(settings)} to stop ${getRandom(dangers)}.`,
-            () => `In the ${getRandom(adjectives)} ${getRandom(settings)}, ${getRandom(weirdFacts)}.`,
-            () => `The legend of ${getRandom(names)}, a place where ${getRandom(creatures)} rule ${getRandom(settings)}.`
-        ];
+        const count = 3;
 
-        const count = 5;
         while (suggestions.length < count) {
-            const template = getRandom(templates as any) as any;
+            const theme = mainThemes[Math.floor(Math.random() * mainThemes.length)];
+
+            const templates = [
+                () => `A ${getRandomCompatible(adjectives, theme)} world in ${getRandomCompatible(settings, theme)} where ${getRandomCompatible(weirdFacts, theme)}.`,
+                () => `The ${getRandomCompatible(adjectives, theme)} land of ${getRandomCompatible(names, theme)}, home to ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(dangers, theme)}.`,
+                () => `Exploration of ${getRandomCompatible(settings, theme)} after ${getRandomCompatible(dangers, theme)} changed everything.`,
+                () => `A high-stakes adventure in ${getRandomCompatible(settings, theme)} featuring ${getRandomCompatible(creatures, theme)}.`,
+                () => `Conflict in ${getRandomCompatible(names, theme)} between ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(creatures, theme)}.`
+            ];
+
+            const template = templates[Math.floor(Math.random() * templates.length)];
             const res = template();
             if (!suggestions.includes(res)) {
                 suggestions.push(res);
