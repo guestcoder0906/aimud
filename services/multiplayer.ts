@@ -264,6 +264,9 @@ export class MultiplayerService {
     if (state.gameState !== 'playing') return;
     const activePlayers = state.players.filter((p: any) => p.status === 'active' && p.hasCharacter);
     if (activePlayers.length > 0 && activePlayers.every((p: any) => p.isReady)) {
+      // Execute turn directly on Host
+      this.onExecuteTurn(state.pendingInputs);
+
       this.channel?.send({
         type: 'broadcast',
         event: 'execute_turn',
@@ -338,6 +341,9 @@ export class MultiplayerService {
     if (!this.roomId) return;
     const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
     if (data && this.channel) {
+      // Execute directly on Host
+      this.onExecuteTurn(data.state.pendingInputs);
+
       this.channel.send({
         type: 'broadcast',
         event: 'execute_turn',
