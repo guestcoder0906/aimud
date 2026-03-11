@@ -51,8 +51,14 @@ function App() {
   const [username, setUsername] = useState<string>(() => {
     return localStorage.getItem('aimud_username') || '';
   });
+  const processingCountRef = useRef(0);
   const [showCharacterCreation, setShowCharacterCreation] = useState(false);
   const [characterDescription, setCharacterDescription] = useState('');
+
+  const updateProcessing = (delta: number) => {
+    processingCountRef.current = Math.max(0, processingCountRef.current + delta);
+    setIsProcessing(processingCountRef.current > 0);
+  };
 
   // Persist narrative and updates
   useEffect(() => {
@@ -100,72 +106,75 @@ function App() {
         syncFiles();
 
         // Check if we need to show character creation
-        const me = state.players.find((p: any) => p.username === localStorage.getItem('aimud_username'));
+        const myName = localStorage.getItem('aimud_username');
+        const me = state.players.find((p: any) => p.username.toLowerCase() === myName?.toLowerCase());
         const myUsername = me?.username?.toLowerCase();
 
         // Find if any file ends with -username.txt or similar variations
         const myCharacterFileExists = Object.keys(state.fileSystemState?.files || {}).some(f => {
           const lowerF = f.toLowerCase();
-          return lowerF.endsWith(`-${myUsername}.txt`) ||
+          return (myUsername && (
+            lowerF.endsWith(`-${myUsername}.txt`) ||
             lowerF.endsWith(`_${myUsername}.txt`) ||
             lowerF.endsWith(` ${myUsername}.txt`) ||
-            lowerF.replace(/\.txt$/, '').trim().endsWith(myUsername);
+            lowerF.replace(/\.txt$/, '').trim().endsWith(myUsername)
+          ));
         });
 
         if (state.gameState !== 'waiting_for_world' && me && !myCharacterFileExists) {
           setShowCharacterCreation(true);
         } else {
           setShowCharacterCreation(false);
-          // Auto-mark hasCharacter to true if the file dropped
-          if (myCharacterFileExists && !me?.hasCharacter) {
-            // In v2 we could push this back to host/DB, but multiplayer.ts syncState handles it globally for now
-          }
         }
       },
       async (inputs) => {
         // Host executes turn
-        setIsProcessing(true);
+        updateProcessing(1);
         const combinedInput = Object.entries(inputs)
           .map(([user, action]) => `${user} does: ${action}`)
           .join('\n');
 
-        const result = await aiEngine.processAction(combinedInput);
-        if (result) {
-          const formattedPlayersActions = Object.entries(inputs)
-            .map(([user, action]) => `[${user}]: ${action}`)
-            .join('\n');
+        try {
+          const result = await aiEngine.processAction(combinedInput);
+          if (result) {
+            const formattedPlayersActions = Object.entries(inputs)
+              .map(([user, action]) => `[${user}]: ${action}`)
+              .join('\n');
 
-          const newNarrative = [
-            ...(roomStateRef.current?.narrative || []),
-            { id: Date.now().toString() + 'user', text: formattedPlayersActions, type: 'user' },
-            { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }
-          ];
-          const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
-          const newUpdates = [...safeUpdates, ...(roomStateRef.current?.updates || [])].slice(0, 50);
+            const newNarrative = [
+              ...(roomStateRef.current?.narrative || []),
+              { id: Date.now().toString() + 'user', text: formattedPlayersActions, type: 'user' },
+              { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }
+            ];
+            const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
+            const newUpdates = [...safeUpdates, ...(roomStateRef.current?.updates || [])].slice(0, 50);
 
-          ms.syncState({
-            fileSystemState: fileSystem.exportState(),
-            narrative: newNarrative,
-            updates: newUpdates,
-            gameState: 'playing',
-            worldTime: fileSystem.read('WorldTime.txt') || '',
-            turnProcessed: true
-          });
+            ms.syncState({
+              fileSystemState: fileSystem.exportState(),
+              narrative: newNarrative,
+              updates: newUpdates,
+              gameState: 'playing',
+              worldTime: fileSystem.read('WorldTime.txt') || '',
+              turnProcessed: true
+            });
+          }
+        } finally {
+          updateProcessing(-1);
         }
-        setIsProcessing(false);
       },
       async ({ username: newUsername, description }) => {
         // Host creates character for new player
-        setIsProcessing(true);
-        const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.\n\nCRITICAL: ONLY return the newly created character file. DO NOT modify, empty, or delete ANY existing files (do not use null).`;
-        await aiEngine.processAction(prompt);
-        // We do NOT call ms.characterCreated(newUsername) here because it causes concurrent race conditions with DB fetch in syncState.
-        // syncState will naturally compute hasCharacter across ALL players correctly using the fresh fileSystem context.
-        ms.syncState({
-          fileSystemState: fileSystem.exportState(),
-          worldTime: fileSystem.read('WorldTime.txt') || ''
-        });
-        setIsProcessing(false);
+        updateProcessing(1);
+        try {
+          const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.\n\nCRITICAL: ONLY return the newly created character file. DO NOT modify, empty, or delete ANY existing files (do not use null).`;
+          await aiEngine.processAction(prompt);
+          ms.syncState({
+            fileSystemState: fileSystem.exportState(),
+            worldTime: fileSystem.read('WorldTime.txt') || ''
+          });
+        } finally {
+          updateProcessing(-1);
+        }
       },
       () => {
         // Kicked
@@ -289,63 +298,69 @@ function App() {
 
   const handleAction = async (text: string) => {
     if (gameMode === 'singleplayer') {
-      setIsProcessing(true);
+      updateProcessing(1);
       const userActionId = Date.now().toString();
       setNarrative(prev => [...prev, { id: userActionId, text: text, type: 'user' }]);
 
-      let result;
-      if (!isInitialized) {
-        result = await aiEngine.initialize(text);
-        setIsInitialized(true);
-      } else {
-        result = await aiEngine.processAction(text);
-      }
-
-      if (result) {
-        if (result.narrative) {
-          setNarrative(prev => [...prev, { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }]);
-        }
-        if (result.updates && Array.isArray(result.updates)) {
-          setUpdates(prev => [...result.updates, ...prev].slice(0, 50));
-        }
-        if (result.recommendations && Array.isArray(result.recommendations)) {
-          setRecommendations(result.recommendations);
+      try {
+        let result;
+        if (!isInitialized) {
+          result = await aiEngine.initialize(text);
+          setIsInitialized(true);
         } else {
-          setRecommendations([]);
+          result = await aiEngine.processAction(text);
         }
-        if (result.gameOver && gameMode === 'singleplayer') {
-          setGameOver(true);
-          setNarrative(prev => [...prev, { id: 'death', text: 'CRITICAL FAILURE: Vital signs zero. Simulation Terminated.', type: 'system' }]);
-        }
-        syncFiles();
-      }
-      setIsProcessing(false);
-    } else if (gameMode === 'multiplayer' && multiplayerService) {
-      if (roomState?.gameState === 'waiting_for_world' && roomState?.hostUsername === username) {
-        // Host initializing world
-        setIsProcessing(true);
-        const userActionId = Date.now().toString();
-        const newNarrative = [...narrative, { id: userActionId, text: text, type: 'user' }];
-        setNarrative(newNarrative);
 
-        const result = await aiEngine.initialize(text);
         if (result) {
-          const finalNarrative = [...newNarrative, { id: Date.now().toString() + 'ai', text: result.narrative || '', type: 'ai' }];
+          if (result.narrative) {
+            setNarrative(prev => [...prev, { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }]);
+          }
+          if (result.updates && Array.isArray(result.updates)) {
+            setUpdates(prev => [...result.updates, ...prev].slice(0, 50));
+          }
           if (result.recommendations && Array.isArray(result.recommendations)) {
             setRecommendations(result.recommendations);
           } else {
             setRecommendations([]);
           }
-          const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
-          multiplayerService.syncState({
-            fileSystemState: fileSystem.exportState(),
-            narrative: finalNarrative,
-            updates: safeUpdates,
-            gameState: 'character_creation',
-            worldTime: fileSystem.read('WorldTime.txt') || ''
-          });
+          if (result.gameOver && gameMode === 'singleplayer') {
+            setGameOver(true);
+            setNarrative(prev => [...prev, { id: 'death', text: 'CRITICAL FAILURE: Vital signs zero. Simulation Terminated.', type: 'system' }]);
+          }
+          syncFiles();
         }
-        setIsProcessing(false);
+      } finally {
+        updateProcessing(-1);
+      }
+    } else if (gameMode === 'multiplayer' && multiplayerService) {
+      if (roomState?.gameState === 'waiting_for_world' && roomState?.hostUsername === username) {
+        // Host initializing world
+        updateProcessing(1);
+        const userActionId = Date.now().toString();
+        const newNarrative = [...narrative, { id: userActionId, text: text, type: 'user' }];
+        setNarrative(newNarrative);
+
+        try {
+          const result = await aiEngine.initialize(text);
+          if (result) {
+            const finalNarrative = [...newNarrative, { id: Date.now().toString() + 'ai', text: result.narrative || '', type: 'ai' }];
+            if (result.recommendations && Array.isArray(result.recommendations)) {
+              setRecommendations(result.recommendations);
+            } else {
+              setRecommendations([]);
+            }
+            const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
+            multiplayerService.syncState({
+              fileSystemState: fileSystem.exportState(),
+              narrative: finalNarrative,
+              updates: safeUpdates,
+              gameState: 'character_creation',
+              worldTime: fileSystem.read('WorldTime.txt') || ''
+            });
+          }
+        } finally {
+          updateProcessing(-1);
+        }
       } else {
         // Normal action submission
         multiplayerService.submitAction(text);
@@ -411,7 +426,7 @@ function App() {
 
             <div className="mb-4 bg-black/50 p-3 rounded border border-neutral-800 text-xs text-gray-400">
               <span className="font-bold text-gray-300">Adventure Context:</span>
-              <p className="mt-1 italic">{roomState?.narrative?.find((n: any) => n.type === 'user')?.text || 'A new adventure awaits...'}</p>
+              <p className="mt-1 italic">{roomState?.narrative?.filter((n: any) => n.type === 'user')[0]?.text || 'A new adventure awaits...'}</p>
             </div>
 
             <p className="text-sm text-gray-400 mb-4">Describe your character's class, appearance, and background.</p>

@@ -169,7 +169,7 @@ export class MultiplayerService {
 
             // Mark existing as active/inactive
             state.players.forEach((p: any) => {
-              const isActive = activeUsernames.includes(p.username);
+              const isActive = activeUsernames.some(u => u.toLowerCase() === p.username.toLowerCase());
               if (p.status !== (isActive ? 'active' : 'inactive')) {
                 p.status = isActive ? 'active' : 'inactive';
                 changed = true;
@@ -178,7 +178,7 @@ export class MultiplayerService {
 
             // Add newly joined players
             activeUsernames.forEach((u: string) => {
-              if (!state.players.find((p: any) => p.username === u)) {
+              if (!state.players.find((p: any) => p.username.toLowerCase() === u.toLowerCase())) {
                 state.players.push({ username: u, status: 'active', isReady: false, hasCharacter: false });
                 changed = true;
               }
