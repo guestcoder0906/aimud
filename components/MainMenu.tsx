@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
 interface MainMenuProps {
-  onStartSingleplayer: () => void;
   onHostGame: (username: string) => void;
   onJoinGame: (roomId: string, username: string) => void;
+  onCancel: () => void;
+  initialMode: 'host' | 'join';
 }
 
-export default function MainMenu({ onStartSingleplayer, onHostGame, onJoinGame }: MainMenuProps) {
-  const [mode, setMode] = useState<'menu' | 'host' | 'join'>('menu');
+export default function MainMenu({ onHostGame, onJoinGame, onCancel, initialMode }: MainMenuProps) {
+  const [mode, setMode] = useState<'host' | 'join'>(initialMode);
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -42,9 +43,12 @@ export default function MainMenu({ onStartSingleplayer, onHostGame, onJoinGame }
   };
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-50 overflow-y-auto">
-      <div className="bg-neutral-900 border border-neutral-700 p-8 rounded-lg shadow-2xl w-[450px] max-w-full my-8">
-        <h1 className="text-3xl font-bold text-center text-blue-400 mb-6 font-mono tracking-widest">AI-SUD</h1>
+    <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-50 p-4">
+      <div className="bg-neutral-900 border border-neutral-700 p-8 rounded-lg shadow-2xl w-[400px] max-w-full">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-blue-400 font-mono tracking-widest">AI-MUD</h1>
+          <button onClick={onCancel} className="text-neutral-500 hover:text-white text-xl">&times;</button>
+        </div>
 
         <div className="flex flex-col gap-2 mb-8 bg-black/50 p-4 border border-neutral-800 rounded">
           <label className="text-gray-400 text-sm font-mono">
@@ -65,28 +69,7 @@ export default function MainMenu({ onStartSingleplayer, onHostGame, onJoinGame }
           </button>
         </div>
 
-        {mode === 'menu' && (
-          <div className="flex flex-col gap-4">
-            <button
-              onClick={onStartSingleplayer}
-              className="bg-neutral-800 hover:bg-neutral-700 text-white p-3 rounded font-mono transition-colors"
-            >
-              Singleplayer
-            </button>
-            <button
-              onClick={() => setMode('host')}
-              className="bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 border border-blue-800 p-3 rounded font-mono transition-colors"
-            >
-              Host Multiplayer
-            </button>
-            <button
-              onClick={() => setMode('join')}
-              className="bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-200 border border-emerald-800 p-3 rounded font-mono transition-colors"
-            >
-              Join Multiplayer
-            </button>
-          </div>
-        )}
+        {/* Removed 'menu' section */}
 
         {mode === 'host' && (
           <div className="flex flex-col gap-4">
@@ -98,18 +81,20 @@ export default function MainMenu({ onStartSingleplayer, onHostGame, onJoinGame }
               onChange={(e) => setUsername(e.target.value)}
               className="bg-black border border-neutral-700 p-2 text-white font-mono"
             />
-            <button
-              onClick={handleHost}
-              className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded font-mono mt-2"
-            >
-              Start Hosting
-            </button>
-            <button
-              onClick={() => setMode('menu')}
-              className="text-neutral-500 hover:text-white text-sm mt-2"
-            >
-              Back
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleHost}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white p-2 rounded font-mono"
+              >
+                Host
+              </button>
+              <button
+                onClick={() => setMode('join')}
+                className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-gray-300 p-2 rounded font-mono"
+              >
+                Switch to Join
+              </button>
+            </div>
           </div>
         )}
 
@@ -131,19 +116,21 @@ export default function MainMenu({ onStartSingleplayer, onHostGame, onJoinGame }
               className="bg-black border border-neutral-700 p-2 text-white font-mono uppercase"
               maxLength={5}
             />
-            <button
-              onClick={handleJoin}
-              disabled={!roomId}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white p-2 rounded font-mono mt-2"
-            >
-              Join
-            </button>
-            <button
-              onClick={() => setMode('menu')}
-              className="text-neutral-500 hover:text-white text-sm mt-2"
-            >
-              Back
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleJoin}
+                disabled={!roomId}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white p-2 rounded font-mono"
+              >
+                Join
+              </button>
+              <button
+                onClick={() => setMode('host')}
+                className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-gray-300 p-2 rounded font-mono"
+              >
+                Switch to Host
+              </button>
+            </div>
           </div>
         )}
       </div>

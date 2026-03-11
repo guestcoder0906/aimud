@@ -71,17 +71,17 @@ io.on('connection', (socket) => {
       socket.emit('error', 'Room not found');
       return;
     }
-    
+
     // Check if username exists
-    const existingPlayer = room.players.find(p => p.username === username);
-    if (existingPlayer) {
-      if (existingPlayer.status === 'active') {
+    const existingPlayerIndex = room.players.findIndex(p => p.username === username);
+    if (existingPlayerIndex !== -1) {
+      if (room.players[existingPlayerIndex].status === 'active') {
         socket.emit('error', 'Username already taken in this session');
         return;
       } else {
         // Reconnect
-        existingPlayer.socketId = socket.id;
-        existingPlayer.status = 'active';
+        room.players[existingPlayerIndex].socketId = socket.id;
+        room.players[existingPlayerIndex].status = 'active';
       }
     } else {
       room.players.push({ username, socketId: socket.id, status: 'active', isReady: false, hasCharacter: false });
@@ -102,10 +102,12 @@ io.on('connection', (socket) => {
         if (player) {
           player.status = 'inactive';
           if (room.hostUsername === currentUsername) {
-            // Assign new host
+            // Assign new host to the oldest active player
             const newHost = room.players.find(p => p.status === 'active' && p.username !== currentUsername);
             if (newHost) {
               room.hostUsername = newHost.username;
+            } else {
+              // Optional: delete room if no active players
             }
           }
         }
@@ -133,7 +135,7 @@ io.on('connection', (socket) => {
           }
         }
         io.to(currentRoomId).emit('state_updated', room);
-        
+
         // Check if turn should proceed
         checkTurn(room);
       }
@@ -149,10 +151,10 @@ io.on('connection', (socket) => {
       room.updates = state.updates;
       room.gameState = state.gameState;
       room.worldTime = state.worldTime;
-      
+
       // Update hasCharacter based on file existence
       room.players.forEach(p => {
-        p.hasCharacter = Object.keys(room.fileSystemState.files).some(f => f.endsWith(`-${p.username}.txt`));
+        p.hasCharacter = Object.keys(room.fileSystemState.files).some(f => f.toLowerCase().endsWith(`-${p.username.toLowerCase()}.txt`));
       });
 
       // Reset ready states if we just processed a turn
@@ -160,9 +162,9 @@ io.on('connection', (socket) => {
         room.players.forEach(p => p.isReady = false);
         room.pendingInputs = {};
       }
-      
+
       io.to(currentRoomId).emit('state_updated', room);
-      
+
       // Check if turn should proceed (e.g., if a player died and is no longer active)
       checkTurn(room);
     }
@@ -175,7 +177,7 @@ io.on('connection', (socket) => {
       room.pendingInputs[currentUsername] = action;
       const player = room.players.find(p => p.username === currentUsername);
       if (player) player.isReady = true;
-      
+
       io.to(currentRoomId).emit('state_updated', room);
       checkTurn(room);
     }

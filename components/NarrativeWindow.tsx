@@ -23,8 +23,8 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
 
     // 1. Handle target(...)
     processed = processed.replace(/target\((.*?)\)\[(.*?)\]/gs, (match, targets, innerText) => {
-      const targetList = targets.split(',').map((t: string) => t.trim());
-      if (debugMode || targetList.includes(username)) {
+      const targetList = targets.split(',').map((t: string) => t.trim().toLowerCase());
+      if (debugMode || targetList.includes(username.toLowerCase())) {
         return `<span class="text-purple-300 bg-purple-900/20 px-1 border border-dashed border-purple-800 rounded" title="Target: ${targets}">${innerText}</span>`;
       }
       return ''; // Hide completely for non-targets

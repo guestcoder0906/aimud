@@ -38,11 +38,13 @@ function App() {
     const saved = localStorage.getItem('aimud_autoRecommendationsEnabled');
     return saved !== null ? JSON.parse(saved) : true;
   });
-  
+
   // Multiplayer state
-  const [gameMode, setGameMode] = useState<'menu' | 'singleplayer' | 'multiplayer'>(() => {
-    return (localStorage.getItem('aimud_gameMode') as any) || 'menu';
+  const [gameMode, setGameMode] = useState<'singleplayer' | 'multiplayer'>(() => {
+    const saved = localStorage.getItem('aimud_gameMode');
+    return (saved === 'multiplayer' ? 'multiplayer' : 'singleplayer');
   });
+  const [showMultiplayerModal, setShowMultiplayerModal] = useState<'host' | 'join' | null>(null);
   const [multiplayerService, setMultiplayerService] = useState<MultiplayerService | null>(null);
   const [roomState, setRoomState] = useState<any>(null);
   const [username, setUsername] = useState<string>(() => {
@@ -94,10 +96,16 @@ function App() {
         setUpdates(state.updates || []);
         setWorldTime(state.worldTime || '');
         syncFiles();
-        
+
         // Check if we need to show character creation
         const me = state.players.find((p: any) => p.username === localStorage.getItem('aimud_username'));
-        const myCharacterFileExists = fileSystem.list().some(f => f.endsWith(`-${me?.username}.txt`));
+        const myUsername = me?.username?.toLowerCase();
+
+        // Find if any file ends with -username.txt
+        const myCharacterFileExists = Object.keys(state.fileSystemState?.files || {}).some(f =>
+          f.toLowerCase().endsWith(`-${myUsername}.txt`)
+        );
+
         if (state.gameState !== 'waiting_for_world' && me && !myCharacterFileExists) {
           setShowCharacterCreation(true);
         } else {
@@ -110,13 +118,13 @@ function App() {
         const combinedInput = Object.entries(inputs)
           .map(([user, action]) => `${user} does: ${action}`)
           .join('\n');
-        
+
         const result = await aiEngine.processAction(combinedInput);
         if (result) {
           const newNarrative = [...(roomState?.narrative || []), { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }];
           const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
           const newUpdates = [...safeUpdates, ...(roomState?.updates || [])].slice(0, 50);
-          
+
           ms.syncState({
             fileSystemState: fileSystem.exportState(),
             narrative: newNarrative,
@@ -131,7 +139,7 @@ function App() {
       async ({ username: newUsername, description }) => {
         // Host creates character for new player
         setIsProcessing(true);
-        const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.`;
+        const prompt = `Create a highly detailed and extensive character file for player "${newUsername}" based on this description: ${description}. The file MUST be named in the format "CharacterName-${newUsername}.txt" (e.g., if their character is named Bob, the file is "Bob-${newUsername}.txt"). IMPORTANT: Make sure to include exhaustive stats, deep psychological profile, a complete inventory, and explicit physical details including size, dimensions, and weight. Do NOT use dice notation (e.g., 1d6) for any stats or damage; use base values that will be modified by the probability engine. Stats must NOT be stale numbers (e.g., "Agility: 25"). Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects (e.g., "agility: base probability engine + 5%(1000) + effects"). Armor must be represented with a base threshold and specific damage type immunities below that threshold.`;
         await aiEngine.processAction(prompt);
         ms.characterCreated(newUsername);
         ms.syncState({
@@ -146,13 +154,13 @@ function App() {
       () => {
         // Kicked
         alert('You have been kicked from the session.');
-        setGameMode('menu');
+        setGameMode('singleplayer');
         setMultiplayerService(null);
       },
       () => {
         // Adventure deleted
         alert('The host has deleted the adventure.');
-        setGameMode('menu');
+        setGameMode('singleplayer');
         setMultiplayerService(null);
       }
     );
@@ -168,9 +176,9 @@ function App() {
       await ms.joinRoom(roomId, joinUsername);
       localStorage.setItem('aimud_roomId', roomId);
       setGameMode('multiplayer');
+      setShowMultiplayerModal(null);
     } catch (err: any) {
       alert(err);
-      setGameMode('menu');
     }
   };
 
@@ -179,11 +187,11 @@ function App() {
     if (gameMode === 'singleplayer') {
       syncFiles();
       if (fileSystem.list().length === 0) {
-         setNarrative([{
-           id: 'init',
-           text: 'Welcome to AI-SUD Gemini Edition. Enter a scenario prompt to begin (e.g., "A cyberpunk detective in Neo-Tokyo")',
-           type: 'system'
-         }]);
+        setNarrative([{
+          id: 'init',
+          text: 'Welcome to AI-MUD Gemini Edition. Enter a scenario prompt to begin (e.g., "A cyberpunk detective in Neo-Tokyo")',
+          type: 'system'
+        }]);
       } else {
         setIsInitialized(true);
         setNarrative(prev => {
@@ -204,14 +212,12 @@ function App() {
       if (savedRoomId && savedUsername) {
         handleJoinGame(savedRoomId, savedUsername);
       } else {
-        setGameMode('menu');
+        setGameMode('singleplayer');
       }
     }
   }, [gameMode]);
 
-  const handleStartSingleplayer = () => {
-    setGameMode('singleplayer');
-  };
+  // Removed handleStartSingleplayer as we default to it
 
   const handleHostGame = async (hostUsername: string) => {
     setUsername(hostUsername);
@@ -221,6 +227,7 @@ function App() {
     const roomId = await ms.createRoom(hostUsername);
     localStorage.setItem('aimud_roomId', roomId);
     setGameMode('multiplayer');
+    setShowMultiplayerModal(null);
     setNarrative([{
       id: 'init',
       text: `Hosting Room: ${roomId}. Enter a scenario prompt to begin world generation.`,
@@ -234,7 +241,7 @@ function App() {
       setMultiplayerService(null);
     }
     localStorage.removeItem('aimud_roomId');
-    setGameMode('menu');
+    setGameMode('singleplayer');
   };
 
   const handleAction = async (text: string) => {
@@ -245,10 +252,10 @@ function App() {
 
       let result;
       if (!isInitialized) {
-         result = await aiEngine.initialize(text);
-         setIsInitialized(true);
+        result = await aiEngine.initialize(text);
+        setIsInitialized(true);
       } else {
-         result = await aiEngine.processAction(text);
+        result = await aiEngine.processAction(text);
       }
 
       if (result) {
@@ -277,7 +284,7 @@ function App() {
         const userActionId = Date.now().toString();
         const newNarrative = [...narrative, { id: userActionId, text: text, type: 'user' }];
         setNarrative(newNarrative);
-        
+
         const result = await aiEngine.initialize(text);
         if (result) {
           const finalNarrative = [...newNarrative, { id: Date.now().toString() + 'ai', text: result.narrative || '', type: 'ai' }];
@@ -345,11 +352,12 @@ function App() {
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-black text-gray-200 overflow-hidden">
-      {gameMode === 'menu' && (
-        <MainMenu 
-          onStartSingleplayer={handleStartSingleplayer}
+      {showMultiplayerModal && (
+        <MainMenu
           onHostGame={handleHostGame}
           onJoinGame={handleJoinGame}
+          onCancel={() => setShowMultiplayerModal(null)}
+          initialMode={showMultiplayerModal}
         />
       )}
 
@@ -358,13 +366,13 @@ function App() {
           <div className="bg-neutral-900 border border-neutral-700 p-8 rounded-lg shadow-2xl w-96 max-w-full">
             <h2 className="text-xl text-center text-blue-300 mb-4">Create Your Character</h2>
             <p className="text-sm text-gray-400 mb-4">Describe your character's class, appearance, and background.</p>
-            <textarea 
+            <textarea
               value={characterDescription}
               onChange={(e) => setCharacterDescription(e.target.value)}
               className="w-full h-32 bg-black border border-neutral-700 p-2 text-white font-mono mb-4"
               placeholder="e.g., A rogue elf with a mysterious past..."
             />
-            <button 
+            <button
               onClick={() => {
                 multiplayerService?.createCharacter(characterDescription);
                 setShowCharacterCreation(false);
@@ -378,7 +386,7 @@ function App() {
         </div>
       )}
 
-      <Sidebar 
+      <Sidebar
         files={files}
         fileSystem={fileSystem}
         updates={updates}
@@ -392,8 +400,14 @@ function App() {
         username={username}
         onKickPlayer={(user) => {
           if (multiplayerService) {
-            const charFile = fileSystem.list().find(f => f.endsWith(`-${user}.txt`));
-            if (charFile) fileSystem.delete(charFile);
+            // Find and delete the character file
+            const userLower = user.toLowerCase();
+            const charFile = fileSystem.list().find(f => f.toLowerCase().endsWith(`-${userLower}.txt`));
+
+            if (charFile) {
+              fileSystem.delete(charFile);
+            }
+
             multiplayerService.syncState({
               fileSystemState: fileSystem.exportState(),
               narrative: roomState?.narrative || [],
@@ -409,17 +423,19 @@ function App() {
         onReferenceClick={handleReferenceClick}
         autoRecommendationsEnabled={autoRecommendationsEnabled}
         onToggleAutoRecommendations={() => setAutoRecommendationsEnabled(!autoRecommendationsEnabled)}
+        onHostClick={() => setShowMultiplayerModal('host')}
+        onJoinClick={() => setShowMultiplayerModal('join')}
       />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
         <div className="bg-neutral-900 border-b border-neutral-800 p-2 text-center text-xs text-blue-400 font-mono tracking-widest shadow-lg z-10 flex justify-between items-center">
-           <span>{worldTime || "TIME: UNKNOWN"}</span>
-           {gameMode === 'multiplayer' && roomState && (
-             <span className="text-emerald-400">Room: {roomState.id} | {roomState.players?.filter((p:any) => p.status === 'active').length} Players</span>
-           )}
+          <span>{worldTime || "TIME: UNKNOWN"}</span>
+          {gameMode === 'multiplayer' && roomState && (
+            <span className="text-emerald-400">Room: {roomState.id} | {roomState.players?.filter((p: any) => p.status === 'active').length} Players</span>
+          )}
         </div>
 
-        <NarrativeWindow 
+        <NarrativeWindow
           history={narrative}
           onReferenceClick={handleReferenceClick}
           debugMode={debugMode}
@@ -429,21 +445,21 @@ function App() {
 
         {gameOver && (
           <div className="absolute inset-0 flex items-center justify-center bg-red-900/20 backdrop-blur-sm z-20 pointer-events-none">
-             <div className="bg-black border-2 border-red-600 p-8 rounded text-center shadow-[0_0_50px_rgba(220,38,38,0.5)]">
-               <h1 className="text-4xl font-bold text-red-600 mb-2">TERMINATED</h1>
-               <p className="text-gray-400">Please reset the system to restart.</p>
-             </div>
+            <div className="bg-black border-2 border-red-600 p-8 rounded text-center shadow-[0_0_50px_rgba(220,38,38,0.5)]">
+              <h1 className="text-4xl font-bold text-red-600 mb-2">TERMINATED</h1>
+              <p className="text-gray-400">Please reset the system to restart.</p>
+            </div>
           </div>
         )}
 
-        <InputArea 
-          onSend={handleAction} 
-          disabled={isProcessing || gameOver || isMyTurnReady || (gameMode === 'multiplayer' && roomState?.gameState === 'waiting_for_world' && !isHost)} 
+        <InputArea
+          onSend={handleAction}
+          disabled={isProcessing || gameOver || isMyTurnReady || (gameMode === 'multiplayer' && roomState?.gameState === 'waiting_for_world' && !isHost)}
           recommendations={autoRecommendationsEnabled ? recommendations : []}
         />
       </div>
 
-      <Modal 
+      <Modal
         isOpen={isResetModalOpen}
         onConfirm={handleReset}
         onCancel={() => setIsResetModalOpen(false)}

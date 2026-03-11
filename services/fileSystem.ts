@@ -52,7 +52,15 @@ export class FileSystem {
   }
 
   getDisplayName(filename: string): string {
-    return this.metadata[filename]?.displayName || this.generateDisplayName(filename);
+    let base = filename.replace(/\.txt|\.json/g, '');
+
+    // Remove target() syntax
+    base = base.replace(/target\(.*?\)(?:\[(.*?)\])?/g, (match, inner) => inner || '');
+
+    // Remove hide[] syntax
+    base = base.replace(/hide\[(.*?)\]/g, '$1');
+
+    return base.trim() || filename;
   }
 
   read(filename: string): string | null {
