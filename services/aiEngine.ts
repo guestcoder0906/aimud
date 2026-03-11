@@ -235,7 +235,8 @@ CRITICAL REMINDER:
 4. PROBABILITY ENGINE RULE: If the action is uncertain, has a chance of failure, or involves stats/skills, return "checks" and an empty narrative.
 5. Ensure all stats use the new dynamic probability engine modifier format.
 6. NO VAGUE MAGIC: Any spell, superpower, or supernatural ability MUST be strictly documented with limits (e.g., max weight 5 lbs, max range 10m), strict energy costs per use, and exact constraints. "Vague magic" is rejected.
-${username ? `7. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
+7. FILE MINIMIZATION (CRITICAL): Do NOT re-include files in 'files' if their content has NOT changed. Only include files that are NEW, MODIFIED, or DELETED. Repeating unchanged files wastes resources.
+${username ? `8. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
 
           const res = await this.handleRequest(prompt);
           resolve(res);
@@ -424,9 +425,15 @@ ${username ? `7. If a character file for "${username}" does not exist, you MUST 
         if (fileData === null || (typeof fileData === 'object' && fileData.content === null)) {
           this.fs.delete(filename);
         } else if (typeof fileData === 'string') {
+          // Skip if content is identical to what's already stored
+          const existing = this.fs.read(filename);
+          if (existing === fileData) continue;
           this.fs.write(filename, fileData);
         } else if (fileData && typeof fileData === 'object' && fileData.content) {
           const contentStr = typeof fileData.content === 'object' ? JSON.stringify(fileData.content) : fileData.content;
+          // Skip if content is identical to what's already stored
+          const existing = this.fs.read(filename);
+          if (existing === contentStr) continue;
           this.fs.write(filename, contentStr, fileData.displayName);
         }
       }
