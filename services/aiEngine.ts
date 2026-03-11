@@ -191,7 +191,7 @@ export class AIEngine {
             ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
             : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
-          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".`;
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".\nCRITICAL: Any magic, abilities, or spells MUST be highly specific with strict limits, energy costs, ranges, and target caps. Vague "magic" is completely unacceptable.`;
           const res = await this.handleRequest(prompt);
           resolve(res);
         } catch (e) {
@@ -227,7 +227,8 @@ CRITICAL REMINDER:
 3. The files listed above are your ONLY source of truth. Do not invent stats that contradict the files.
 4. PROBABILITY ENGINE RULE: If the action is uncertain, has a chance of failure, or involves stats/skills, return "checks" and an empty narrative.
 5. Ensure all stats use the new dynamic probability engine modifier format.
-${username ? `6. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
+6. NO VAGUE MAGIC: Any spell, superpower, or supernatural ability MUST be strictly documented with limits (e.g., max weight 5 lbs, max range 10m), strict energy costs per use, and exact constraints. "Vague magic" is rejected.
+${username ? `7. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
 
           const res = await this.handleRequest(prompt);
           resolve(res);
@@ -256,12 +257,15 @@ ${username ? `6. If a character file for "${username}" does not exist, you MUST 
       const results = data.checks.map(check => {
         const roll = Math.floor(Math.random() * 1001);
         const outcome = this.determineOutcome(roll, check.thresholds);
+        const safeName = check.name || 'Action Check';
+        const safeDesc = check.description || 'Probability roll for an uncertain event';
+        const safeThresholds = check.thresholds || { "Success": 500 };
         return {
-          name: check.name,
-          description: check.description,
+          name: safeName,
+          description: safeDesc,
           outcome: outcome,
           roll: roll,
-          thresholds: check.thresholds
+          thresholds: safeThresholds
         };
       });
 
