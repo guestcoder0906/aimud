@@ -8,6 +8,8 @@ import InputArea from './components/InputArea';
 import Modal from './components/Modal';
 import MainMenu from './components/MainMenu';
 import { MultiplayerService } from './services/multiplayer';
+import { SuggestionGenerator } from './services/suggestionGenerator';
+
 
 // Instantiate services outside component to persist across re-renders
 const fileSystem = new FileSystem();
@@ -59,6 +61,10 @@ function App() {
     processingCountRef.current = Math.max(0, processingCountRef.current + delta);
     setIsProcessing(processingCountRef.current > 0);
   };
+
+  const isHost = roomState?.hostUsername === username;
+  const isMyTurnReady = roomState?.players?.find((p: any) => p.username === username)?.isReady;
+
 
   // Persist narrative and updates
   useEffect(() => {
@@ -369,6 +375,20 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    if (autoRecommendationsEnabled && !showCharacterCreation) {
+      const isSinglePlayerSetup = gameMode === 'singleplayer' && !isInitialized;
+      const isMultiplayerSetup = gameMode === 'multiplayer' && roomState?.gameState === 'waiting_for_world' && isHost;
+
+      if ((isSinglePlayerSetup || isMultiplayerSetup) && recommendations.length === 0) {
+        if (isSinglePlayerSetup) {
+          setRecommendations(SuggestionGenerator.generateSinglePlayer());
+        } else {
+          setRecommendations(SuggestionGenerator.generateMultiplayer());
+        }
+      }
+    }
+  }, [gameMode, isInitialized, roomState?.gameState, isHost, autoRecommendationsEnabled, showCharacterCreation, recommendations.length]);
   const handleReferenceClick = (ref: string) => {
     const filename = fileSystem.findFileByReference(ref);
     if (filename) {
@@ -404,9 +424,6 @@ function App() {
     }
     setIsResetModalOpen(false);
   };
-
-  const isHost = roomState?.hostUsername === username;
-  const isMyTurnReady = roomState?.players?.find((p: any) => p.username === username)?.isReady;
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-black text-gray-200 overflow-hidden">
@@ -531,8 +548,12 @@ function App() {
         <InputArea
           onSend={handleAction}
           disabled={isProcessing || gameOver || isMyTurnReady || showCharacterCreation || (gameMode === 'multiplayer' && roomState?.gameState !== 'playing' && !(roomState?.gameState === 'waiting_for_world' && isHost))}
-          recommendations={(autoRecommendationsEnabled && !showCharacterCreation && (gameMode === 'singleplayer' || roomState?.gameState === 'playing')) ? recommendations : []}
+          recommendations={(autoRecommendationsEnabled && !showCharacterCreation && (
+            (gameMode === 'singleplayer') ||
+            (gameMode === 'multiplayer' && (roomState?.gameState === 'playing' || (roomState?.gameState === 'waiting_for_world' && isHost)))
+          )) ? recommendations : []}
         />
+
       </div>
 
       <Modal
