@@ -64,6 +64,7 @@ CRITICAL FILE MANAGEMENT RULES:
   * \`facing\`: angle in degrees (0 is right, 90 is down, 180 is left, 270 is up).
   * \`vision\`: contains the player's dynamic vision capabilities.
   * Include all player-visible elements within the scale (npcs, furniture, buildings, vehicles, etc.).
+  * You MUST show ALL active players on the map in the 'players' array of the appropriate map page (e.g. { "username": "Alice", "x": 10, "y": 20, ... }).
   * You MUST show all visible, sensed, or last known NPC locations on the map in the 'areas' array (type: 'npc').
   * You MUST provide correct physical dimensions for NPCs using width/height or radius corresponding exactly to the size in their files.
   * Use hide[Secret Room] or target(PlayerName)[Secret Room] for area names if they are hidden or only known to specific players.
