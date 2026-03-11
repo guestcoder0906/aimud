@@ -272,18 +272,26 @@ export class SuggestionGenerator {
         while (suggestions.length < count) {
             const theme = mainThemes[Math.floor(Math.random() * mainThemes.length)];
 
-            const charDescription = `CHARACTER: A ${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)} ${getRandomCompatible(traits, theme)} ${getRandomCompatible(backgrounds, theme)}.`;
-
-            const templates = [
-                () => `${charDescription} SCENARIO: Exploring ${getRandomCompatible(settings, theme)} seeking ${getRandomCompatible(goals, theme)}.`,
-                () => `${charDescription} SCENARIO: You find yourself in ${getRandomCompatible(settings, theme)}, where ${getRandomCompatible(weirdFacts, theme)}.`,
-                () => `${charDescription} SCENARIO: Survive ${getRandomCompatible(settings, theme)} plagued by ${getRandomCompatible(dangers, theme)}.`,
-                () => `${charDescription} SCENARIO: A journey through ${getRandomCompatible(settings, theme)} to find ${getRandomCompatible(goals, theme)}.`,
-                () => `${charDescription} SCENARIO: Caught in a conflict in ${getRandomCompatible(names, theme)} where ${getRandomCompatible(creatures, theme)} roam.`
+            const charTemplates = [
+                () => `A ${getRandomCompatible(adjectives, theme)} ${getRandomCompatible(classes, theme)} ${getRandomCompatible(traits, theme)} ${getRandomCompatible(backgrounds, theme)}`,
+                () => `${getRandomCompatible(adjectives, theme).toUpperCase()} ${getRandomCompatible(classes, theme).toUpperCase()}`,
+                () => `A ${getRandomCompatible(classes, theme)} ${getRandomCompatible(backgrounds, theme)}`
             ];
 
-            const template = templates[Math.floor(Math.random() * templates.length)];
-            const res = template();
+            const scenarioTemplates = [
+                () => `Exploring ${getRandomCompatible(settings, theme)} seeking ${getRandomCompatible(goals, theme)}.`,
+                () => `You are in ${getRandomCompatible(settings, theme)}.`,
+                () => `Survive ${getRandomCompatible(settings, theme)} - ${getRandomCompatible(weirdFacts, theme)}.`,
+                () => `${getRandomCompatible(settings, theme)}`,
+                () => `Finding ${getRandomCompatible(goals, theme)} in ${getRandomCompatible(names, theme)}.`
+            ];
+
+            const charPart = charTemplates[Math.floor(Math.random() * charTemplates.length)]();
+            const scenarioPart = scenarioTemplates[Math.floor(Math.random() * scenarioTemplates.length)]();
+
+            const res = Math.random() > 0.3
+                ? `CHARACTER: ${charPart}. SCENARIO: ${scenarioPart}`
+                : `${charPart} in ${scenarioPart}`;
             if (!suggestions.includes(res)) {
                 suggestions.push(res);
             }
@@ -303,7 +311,13 @@ export class SuggestionGenerator {
                 () => `The ${getRandomCompatible(adjectives, theme)} land of ${getRandomCompatible(names, theme)}, home to ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(dangers, theme)}.`,
                 () => `Exploration of ${getRandomCompatible(settings, theme)} after ${getRandomCompatible(dangers, theme)} changed everything.`,
                 () => `A high-stakes adventure in ${getRandomCompatible(settings, theme)} featuring ${getRandomCompatible(creatures, theme)}.`,
-                () => `Conflict in ${getRandomCompatible(names, theme)} between ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(creatures, theme)}.`
+                () => `Conflict in ${getRandomCompatible(names, theme)} between ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(creatures, theme)}.`,
+                // Shorter phrases
+                () => `${getRandomCompatible(adjectives, theme).toUpperCase()} ${getRandomCompatible(names, theme).toUpperCase()}`,
+                () => `${getRandomCompatible(settings, theme)}: ${getRandomCompatible(dangers, theme)}`,
+                () => `Journey to ${getRandomCompatible(settings, theme)}`,
+                () => `The ${getRandomCompatible(creatures, theme)} of ${getRandomCompatible(names, theme)}`,
+                () => `${getRandomCompatible(goals, theme)} in ${getRandomCompatible(settings, theme)}`
             ];
 
             const template = templates[Math.floor(Math.random() * templates.length)];
