@@ -101,6 +101,7 @@ function App() {
         setNarrative(state.narrative || []);
         setUpdates(state.updates || []);
         setWorldTime(state.worldTime || '');
+        setRecommendations(state.recommendations || []);
         syncFiles();
 
         // Check if we need to show character creation
@@ -151,6 +152,7 @@ function App() {
               fileSystemState: fileSystem.exportState(),
               narrative: newNarrative,
               updates: newUpdates,
+              recommendations: result.recommendations || [],
               gameState: 'playing',
               worldTime: fileSystem.read('WorldTime.txt') || '',
               turnProcessed: true
@@ -356,6 +358,7 @@ function App() {
               fileSystemState: fileSystem.exportState(),
               narrative: finalNarrative,
               updates: safeUpdates,
+              recommendations: result.recommendations || [],
               gameState: 'character_creation',
               worldTime: fileSystem.read('WorldTime.txt') || ''
             });

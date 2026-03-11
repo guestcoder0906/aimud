@@ -175,6 +175,15 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
         return 'fill-slate-700/80 stroke-slate-400';
       case 'projectile':
         return 'fill-red-500/80 stroke-red-300';
+      case 'fire':
+      case 'lava':
+        return 'fill-orange-600/60 stroke-orange-400 animate-pulse';
+      case 'poison':
+      case 'acid':
+        return 'fill-lime-600/40 stroke-lime-400';
+      case 'treasure':
+      case 'loot':
+        return 'fill-yellow-400/60 stroke-yellow-200';
       default:
         return 'fill-neutral-800/40 stroke-neutral-600';
     }
@@ -346,6 +355,28 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
               </text>
             </g>
           )
+        })}
+
+        {/* Draw Notes/Annotations */}
+        {currentPage.notes?.map((note: any, i: number) => {
+          const nx = Number(note.x) || 0;
+          const ny = Number(note.y) || 0;
+          const isDanger = note.type === 'danger';
+          const isDiscovery = note.type === 'discovery';
+
+          return (
+            <g key={`note-${i}`} transform={`translate(${nx}, ${ny})`}>
+              <circle r="1" className={isDanger ? "fill-red-500" : isDiscovery ? "fill-yellow-400" : "fill-blue-400"} />
+              <text
+                y="-3"
+                textAnchor="middle"
+                className={`text-[5px] font-bold font-mono pointer-events-none drop-shadow-md ${isDanger ? "fill-red-400" : isDiscovery ? "fill-yellow-300" : "fill-blue-300"
+                  }`}
+              >
+                {note.text}
+              </text>
+            </g>
+          );
         })}
       </svg>
     </div>
