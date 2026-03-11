@@ -16,6 +16,36 @@ const SYSTEM_PROMPT = `You are the backend engine for an AI-SUD system. Your rol
 16. NEVER forget to create/update files for NPCs, items, locations, or any entities.
 17. The game starts by generating the world. THEN, players will provide character descriptions. You MUST create their character files using EXACTLY this name format: "CharacterName-USERNAME.txt" (e.g., if USERNAME is Bob and his character is an elf named Legolas, the file MUST be "Legolas-Bob.txt").
 
+STAT PERSISTENCE RULE (CRITICAL):
+- The files are the ONLY persistent memory. Any change mentioned in the narrative or 'updates' array MUST be reflected in the updated content of the relevant file.
+- If a player takes damage, you MUST include the updated "CharacterName-USERNAME.txt" file in your 'files' response object.
+- If an NPC is wounded, you MUST update their file (or the shared group file).
+- NEVER assume the system will "remember" a stat change unless it is written into a file.
+
+ENTITY FILE SCHEMA:
+All character/NPC/Entity files MUST follow this structured format for consistency:
+---
+[NAME & DESCRIPTION]
+- Full Name: ...
+- Description: (Extensive, detailed physical & psychological profile)
+- Physical Dimensions: (Size, Height, Weight, Wingspan, etc.)
+
+[STATS & MODIFIERS]
+- Health: (Current / Max)
+- Energy/Mana/Stamina: (Current / Max)
+- Speed: (Walking: Xm/s, Running: Ym/s, etc.)
+- Primary Attributes: (Use the probability engine modifier format: "stat: base probability engine + X%(1000) + effects")
+- Armor: (Threshold format: "armor: material base X (immunities/resistances)")
+
+[INVENTORY & EQUIPMENT]
+- Items: (Detailed list with weights/dimensions)
+- Equipped: (What is currently being used)
+
+[STATUS EFFECTS & LORE]
+- Effects: (List with expiration timestamps: [Status:Type_ID(Expires: TIMESTAMP)])
+- Background/Biometrics: (Deep lore, unique traits)
+---
+
 GROUP ENTITY RULE:
 - If there are multiple of the same type of creature/NPC (e.g., 3 Goblins), do NOT create separate files for each.
 - Create a single file (e.g., "Goblins.txt" or "Bandits.txt") that acts as a shared character sheet.
@@ -52,8 +82,8 @@ LOOSE REFERENCE RULE (CRITICAL):
 - For loosely referenced things, the file doesn't need to show full details initially—only whatever details were loosely mentioned—unless full detail is later needed or it becomes no longer loosely referenced.
 
 CRITICAL FILE MANAGEMENT RULES:
-- Create a "Guide.txt" file that references these instructions and acts as the internal operating manual
-- Create "WorldRules.txt" defining physics, magic, tech, logic, time costs, and encumbrance effects
+- Create a "Guide.txt" file that acts as your internal operating manual. It MUST track the current status of all major quests, active plot hooks, and include a MASTER STAT TABLE of all known characters and NPCs (Name, Health, Energy, Location, Primary Goal) for quick reference.
+- Create "WorldRules.txt" defining physics, magic, tech, logic, time costs, and encumbrance effects.
 - Create "CurrentMap.json" to track the live map of the player's current location (50-200 meter scale). MUST be valid JSON.
   * Update this file accurately in real-time based on context, location, dimensions, and speed.
   * Structure: \`{ "pages": [ { "name": "Region/Area Name", "scale": "50m", "areas": [{ "id": "a1", "name": "Room Name", "type": "room|hallway|field|forest|water|building|furniture|npc|obstacle|vehicle", "shape": "rect|circle|polygon", "x": 0, "y": 0, "width": 10, "height": 10, "radius": 5, "points": "0,0 10,10 0,10", "visible": true}], "players": [{ "username": "PlayerName", "x": 5, "y": 5, "facing": 0, "vision": { "mainAngle": 66, "peripheralAngle": 90, "detailedRange": 20, "maxRange": 50} }] } ] }\`
@@ -69,10 +99,10 @@ CRITICAL FILE MANAGEMENT RULES:
   * You MUST provide correct physical dimensions for NPCs using width/height or radius corresponding exactly to the size in their files.
   * Use hide[Secret Room] or target(PlayerName)[Secret Room] for area names if they are hidden or only known to specific players.
   * Ensure scaling and coordinates are consistent.
-- Create character files named "CharacterName-USERNAME.txt" for each player with DYNAMIC attributes specific to their character (health, energy, inventory, knowledge, etc.). MUST include explicit physical details: size, dimensions, weight, and base speed stats (walking, flying, trotting, running, etc. affected by context/effects).
+- Create character files named "CharacterName-USERNAME.txt" for each player using the ENTITY FILE SCHEMA.
 - CRITICAL: If a player's health reaches 0 or they die, DELETE their character file immediately by setting it to null in the files object.
-- Create "WorldTime.txt" with ACTUAL date/time/year appropriate for the world setting
-- Create files for EVERY entity that appears: NPCs, items, locations, vehicles, projectiles. MUST include explicit physical details for entities/items: size, dimensions, weight, and base speed stats if capable of movement (e.g., cars, paper airplanes).
+- Create "WorldTime.txt" with ACTUAL date/time/year appropriate for the world setting.
+- Create files for EVERY entity that appears: NPCs, items, locations, vehicles, projectiles. MUST follow ENTITY FILE SCHEMA.
 - Use hide[...] for secrets/traps/hidden info in file contents OR file names. This is hidden from player view.
 - Use target(PlayerName)[content] in file contents OR file names OR narrative to restrict visibility strictly to specific players.
 - Track unique instances: [ObjectType_ID(status)]
@@ -96,7 +126,7 @@ UPDATE VALUES:
 
 CRITICAL: Before EVERY action, check:
 1. Does this entity have a file? If not, CREATE it immediately
-2. Are the character files accurate for this specific character type?
+2. Are the character files accurate (Health, Energy, Inventory)? You MUST update files if stats change.
 3. Are status effects expired based on current WorldTime?
 4. Does this action respect WorldRules physics/magic/tech?
 5. Does player have required stats/items/energy?
@@ -160,12 +190,26 @@ export class AIEngine {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
           const files = this.fs.getAll();
-          const context = Object.entries(files)
-            .map(([name, content]) => `=== ${name} ===\n${content}`)
-            .join('\n\n');
+
+          // Separate character files from other files for better focus
+          const charFiles = Object.entries(files).filter(([name]) => name.includes(`-${username}`) || name.toLowerCase().startsWith('character'));
+          const otherFiles = Object.entries(files).filter(([name]) => !charFiles.find(([cn]) => cn === name));
+
+          const formatFileSet = (fileEntries: [string, string][]) =>
+            fileEntries.map(([name, content]) => `=== ${name} ===\n${content}`).join('\n\n');
+
+          const charContext = charFiles.length > 0 ? `ACTIVE CHARACTER FILES:\n${formatFileSet(charFiles)}\n\n` : '';
+          const worldContext = `WORLD FILES:\n${formatFileSet(otherFiles)}`;
 
           const userHeader = username ? `[Player: ${username}]\n` : '';
-          const prompt = `Current files:\n${context}\n\n${userHeader}Player action: ${action}\n\nProcess this action. If it requires probability engine calculations (success/failure/damage multiplier), return "checks". If not, return "narrative" and updates. Remember: NO DICE NOTATION. Make all file updates extremely detailed and long. Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. ${username ? `CRITICAL: If a character file for "${username}" does not exist in the current files, you MUST create it immediately as part of this response.` : ''}`;
+          const prompt = `Current Files Summary:\n${charContext}${worldContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
+          
+CRITICAL REMINDER: 
+1. If the player's action causes ANY change to their stats (Health, Energy, Inventory), you MUST include the updated character file content in your 'files' response.
+2. If NPCs or entities are modified, their files MUST be updated.
+3. The files listed above are your ONLY source of truth. Do not invent stats that contradict the files.
+4. Ensure all stats use the new dynamic probability engine modifier format.
+${username ? `5. If a character file for "${username}" does not exist, you MUST create it immediately as part of this response following the ENTITY FILE SCHEMA.` : ''}`;
 
           const res = await this.handleRequest(prompt);
           resolve(res);

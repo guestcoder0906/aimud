@@ -14,8 +14,11 @@ export interface FileMetadata {
 }
 
 export interface UpdateItem {
-  type: 'stat' | 'item' | 'time' | 'misc';
+  /** The category of update (e.g. Health change, Item gained) */
+  type: 'stat' | 'item' | 'time' | 'location' | 'status' | 'misc';
+  /** Human readable description (e.g. "Health -10") */
   text: string;
+  /** Numeric value associated with the update (e.g. -10) */
   value: number;
 }
 
