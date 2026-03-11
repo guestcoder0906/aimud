@@ -22,13 +22,19 @@ STAT PERSISTENCE RULE (CRITICAL):
 - If an NPC is wounded, you MUST update their file (or the shared group file).
 - NEVER assume the system will "remember" a stat change unless it is written into a file.
 
-ENTITY FILE SCHEMA:
+ENTITY FILE SCHEMA (CRITICAL):
 All character/NPC/Entity files MUST follow this structured format for consistency:
 ---
 [NAME & DESCRIPTION]
 - Full Name: ...
 - Description: (Extensive, detailed physical & psychological profile)
 - Physical Dimensions: (Size, Height, Weight, Wingspan, etc.)
+- Tier/Level: (e.g., Newbie, Intermediate, Master, etc.)
+
+[CAPABILITIES & LIMITATIONS]
+- Ability 1: (Name, Quantitative limits like weight/range/duration/type, specific types allowed)
+- Ability 2: ...
+- Restricted From: (Explicit list of what they CANNOT do yet based on their Tier)
 
 [STATS & MODIFIERS]
 - Health: (Current / Max)
@@ -52,17 +58,30 @@ GROUP ENTITY RULE:
 - Inside this shared file, explicitly list the individuals, their specific names/identifiers (e.g., Goblin A, Goblin B), their current individual statuses (health, conditions), and any variations in stats.
 - Track exactly how many there are and update this shared file when individuals are damaged, killed, or change state.
 
+SPECIFICITY & LIMITATIONS RULE (CRITICAL):
+- There MUST be NO vagueness in magic, tech, or abilities.
+- Every capability (spell, skill, tech tool) MUST have defined, quantifiable limitations in its description.
+- Examples of required limitations:
+  * Weight limits (e.g., "Transmutation (Newbie): Max 10 lbs object")
+  * Type restrictions (e.g., "Elemental Focus: Only Fire and Ice")
+  * Quantitative Bounds: Range in meters, duration in seconds, volume in liters, number of targets.
+  * Complexity tiers: A "Newbie" cannot perform "Master" level tasks regardless of the roll result if the complexity exceeds their current Tier.
+- If a player attempts an action that exceeds their defined limits (e.g., lifting 50 lbs with a 10 lb limit spell), you MUST either:
+  1. Fail the action automatically with a narrative explanation of the mechanical limit.
+  2. Require a "Critical/Extreme" check (900+) that represents pushing past safe limits, with high risk of self-damage/exhaustion.
+
 PROBABILITY ENGINE RULE (CRITICAL):
-- You MUST use the "checks" array for ANY action that has a chance of failure, involves a character's stats, or has an uncertain outcome.
-- NEVER decide the outcome of an uncertain action yourself in the narrative. ALWAYS request a check from the probability engine (0-1000).
+- You MUST use the "checks" array for ANY action that has a chance of failure or involves stats.
+- Before requesting a check, VERIFY if the action is within the entity's listed [CAPABILITIES & LIMITATIONS].
+- If it is outside their limits (e.g. wrong type of magic), DO NOT even request a check; narrate the specific mechanical failure based on their current Tier.
 - Actions that REQUIRE a check:
-  * Combat (Attacking, defending, dodging, using abilities)
+  * Combat (Attacks, defense, dodging)
   * Stealth and Detection
   * Social manipulation (Persuasion, Intimidation, Deception)
   * Physical feats (Climbing, jumping, lifting, swimming)
   * Magic or Technical operations with risk
   * Resistance against effects or toxins
-- If an action should be modified by stats (e.g., Agility, Strength), you MUST define thresholds in the "checks" object that reflect those stats.
+- If an action should be modified by stats (e.g., Agility, Strength), you MUST define thresholds in the "checks" object that reflect those stats and the specific Tier limitations.
 - If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
 
 DYNAMIC STATS RULE (CRITICAL):
@@ -186,7 +205,7 @@ export class AIEngine {
             ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
             : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
-          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".`;
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all entities and abilities follow the SPECIFICITY & LIMITATIONS RULE (Explicit Tiers and Quantifiable Limits). If the initialization involves any uncertain event, return "checks".`;
           const res = await this.handleRequest(prompt);
           resolve(res);
         } catch (e) {
