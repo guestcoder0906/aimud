@@ -24,7 +24,6 @@ STAT PERSISTENCE RULE (CRITICAL):
 
 ENTITY FILE SCHEMA:
 All character/NPC/Entity files MUST follow this structured format for consistency:
----
 [NAME & DESCRIPTION]
 - Full Name: ...
 - Description: (Extensive, detailed physical & psychological profile)
@@ -36,6 +35,13 @@ All character/NPC/Entity files MUST follow this structured format for consistenc
 - Speed: (Walking: Xm/s, Running: Ym/s, etc.)
 - Primary Attributes: (Use the probability engine modifier format: "stat: base probability engine + X%(1000) + effects")
 - Armor: (Threshold format: "armor: material base X (immunities/resistances)")
+
+[ABILITIES & MAGIC]
+- List EVERY ability, spell, or special power this specific entity has.
+- Each ability MUST include: Name, Energy Cost, Range, Duration, Cooldown, Weight/Size Limit, Elemental Type, and explicit Limitations.
+- Example: "Firebolt: Cost 15 Mana. Range 30m. Deals 20-35 fire damage. Cooldown 5s. Cannot penetrate water barriers. Cannot target objects heavier than 200 lbs."
+- If this entity has NO magic or special abilities, write "None".
+- CRITICAL: Character-specific abilities belong ONLY in this character's file. Do NOT put them in WorldRules.txt or other files.
 
 [INVENTORY & EQUIPMENT]
 - Items: (Detailed list with weights/dimensions)
@@ -79,11 +85,12 @@ DYNAMIC STATS RULE (CRITICAL):
 FILE DETAIL RULE (CRITICAL):
 - ALL files (character files, locations, items, WorldRules, etc.) MUST be highly detailed, extensive, specific, and accurate. 
 - Do not write vague or short descriptions. Include deep lore, precise physical dimensions, exact quantitative stats, psychological profiles for NPCs, and exhaustive inventory lists.
-- MAGIC & ABILITIES (CRITICAL): If a character or item has magic or special abilities, you MUST define them with EXTREME precision. 
-  * NEVER use vague terms like "can do magic".
-  * Define EXACT limits, ranges, target caps, weight limits (e.g., "can telekinetically lift up to 10 lbs exactly").
-  * Detail explicit energy costs per use.
-  * Define specific elemental types, physics limitations, and what exactly the magic CANNOT do.
+- MAGIC & ABILITIES PLACEMENT RULE (CRITICAL):
+  * Character-specific magic, spells, abilities, and powers MUST be written ONLY inside that character's own file under [ABILITIES & MAGIC].
+  * WorldRules.txt should ONLY contain world-wide magic laws (e.g., "magic doesn't work in anti-magic zones", "all fire spells are 20% weaker in rain"). It must NOT list individual character spells.
+  * NPC abilities go in the NPC's file. Item enchantments go in the item's file.
+  * NEVER scatter a character's abilities across multiple files. Keep them consolidated in ONE place: the owner's file.
+  * NEVER use vague terms like "can do magic" or "has magical abilities". Every single ability must have: exact Name, Energy Cost, Range, Duration, Cooldown, Weight/Size Limits, Elemental Type, and explicit Limitations (what it CANNOT do).
 - You MUST explicitly include the physical size, dimensions, and weight for EVERY character, creature, NPC, and item in their respective files.
 - Make the files long and comprehensive.
 - IMPORTANT MINIMIZATION RULE: ONLY include files in the 'files' object if they are NEW, MODIFIED, or DELETED. If a file is completely unchanged, DO NOT include it in the response at all (it will persist automatically). NEVER use null to mean 'no change' (null means DELETE). NEVER truncate file content with ellipses (...).
