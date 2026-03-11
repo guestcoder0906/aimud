@@ -97,18 +97,58 @@ export class FileSystem {
   findFileByReference(ref: string): string | null {
     if (this.exists(ref)) return ref;
     if (this.exists(ref + '.txt')) return ref + '.txt';
-    
-    // Try to find by display name
-    for (const [filename, meta] of Object.entries(this.metadata)) {
-      if (meta.displayName === ref) return filename;
-    }
-    
-    // Try partial match
+
     const refLower = ref.toLowerCase();
+    const refSlug = refLower.replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+    // 1. Case-insensitive exact match on filename
     for (const filename of Object.keys(this.files)) {
-      if (filename.toLowerCase().includes(refLower)) return filename;
+      if (filename.toLowerCase() === refLower || filename.toLowerCase() === refLower + '.txt') {
+        return filename;
+      }
     }
-    
+
+    // 2. Case-insensitive exact match on display name
+    for (const [filename, meta] of Object.entries(this.metadata)) {
+      if (meta.displayName && meta.displayName.toLowerCase() === refLower) {
+        return filename;
+      }
+    }
+
+    // 3. Slugified match on filename
+    for (const filename of Object.keys(this.files)) {
+      const fileSlug = filename.toLowerCase().replace(/\.txt$/, '').replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      if (fileSlug === refSlug) {
+        return filename;
+      }
+    }
+
+    // 4. Partial match on display name
+    for (const [filename, meta] of Object.entries(this.metadata)) {
+      if (meta.displayName) {
+        const displayLower = meta.displayName.toLowerCase();
+        if (displayLower.includes(refLower) || (displayLower.length >= 3 && refLower.includes(displayLower))) {
+          return filename;
+        }
+      }
+    }
+
+    // 5. Partial match on filename
+    for (const filename of Object.keys(this.files)) {
+      const fileLower = filename.toLowerCase();
+      const nameWithoutExt = fileLower.replace(/\.txt$/, '');
+      if (fileLower.includes(refLower) || (nameWithoutExt.length >= 3 && refLower.includes(nameWithoutExt))) {
+        return filename;
+      }
+    }
+
+    // 6. Full text search as fallback
+    for (const [filename, content] of Object.entries(this.files)) {
+      if (typeof content === 'string' && content.toLowerCase().includes(refLower)) {
+        return filename;
+      }
+    }
+
     return null;
   }
 }

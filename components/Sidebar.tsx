@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UpdateItem } from '../types';
 import { FileSystem } from '../services/fileSystem';
-import { FileText, ChevronRight, ChevronDown, Activity, Settings, RefreshCw, Users, LogOut, Play } from 'lucide-react';
+import { FileText, ChevronRight, ChevronDown, Activity, Settings, RefreshCw, Users, LogOut, Play, Map as MapIcon } from 'lucide-react';
+import MapPanel from './MapPanel';
 
 interface SidebarProps {
   files: string[];
@@ -43,7 +44,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleAutoRecommendations
 }) => {
 
+  const [activeTab, setActiveTab] = useState<'files' | 'map'>('files');
   const isHost = roomState?.hostUsername === username;
+  const expandedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (expandedFile) {
+      setActiveTab('files');
+      // Use setTimeout to allow the DOM to update after switching tabs
+      setTimeout(() => {
+        if (expandedRef.current) {
+          expandedRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 50);
+    }
+  }, [expandedFile]);
 
   const formatContent = (content: string) => {
     if (!content) return '';
@@ -62,15 +77,15 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (debugMode) {
       formatted = formatted.replace(/hide\[(.*?)\]/gs, '<span class="text-yellow-300 bg-yellow-900/20 px-1 border border-dashed border-yellow-800 rounded">$1</span>');
     } else {
-      formatted = formatted.replace(/hide\[.*?\]/gs, '<span class="text-gray-600 italic font-mono">[hidden]</span>');
+      formatted = formatted.replace(/hide\[.*?\]/gs, '<span class="text-gray-600 italic font-mono">&#91;hidden&#93;</span>');
     }
     
     return formatted;
   };
 
   const parseLinks = (html: string) => {
-      return html.replace(/\[([^\]]+)\]/g, (match, ref) => {
-        if (match.includes('span class')) return match;
+      return html.replace(/(<[^>]+>)|\[([^\]]+)\]/g, (match, htmlTag, ref) => {
+        if (htmlTag) return htmlTag;
         return `<span class="text-yellow-400 hover:text-yellow-200 hover:underline cursor-pointer" data-ref="${ref}">${ref}</span>`;
       });
   };
@@ -151,10 +166,23 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {/* Files Section */}
+      {/* Files/Map Section */}
       <div className="flex-1 flex flex-col min-h-0 border-b border-neutral-800">
         <div className="p-2 bg-neutral-950 border-b border-neutral-800 flex justify-between items-center text-gray-400 font-bold uppercase tracking-wider text-[10px]">
-          <span className="flex items-center gap-1"><FileText size={12} /> World Files</span>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setActiveTab('files')} 
+              className={`flex items-center gap-1 hover:text-white transition-colors ${activeTab === 'files' ? 'text-blue-400' : ''}`}
+            >
+              <FileText size={12} /> World Files
+            </button>
+            <button 
+              onClick={() => setActiveTab('map')} 
+              className={`flex items-center gap-1 hover:text-white transition-colors ${activeTab === 'map' ? 'text-blue-400' : ''}`}
+            >
+              <MapIcon size={12} /> Map
+            </button>
+          </div>
           <div className="flex items-center gap-3">
              <label className="flex items-center gap-1 cursor-pointer hover:text-white transition-colors" title="Toggle Auto Recommendations">
                <input type="checkbox" checked={autoRecommendationsEnabled} onChange={onToggleAutoRecommendations} className="hidden" />
@@ -175,33 +203,39 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {visibleFiles.map(filename => {
-            const isExpanded = expandedFile === filename;
-            const content = fileSystem.read(filename) || '';
-            const displayName = fileSystem.getDisplayName(filename);
-            
-            return (
-              <div key={filename} className="bg-neutral-800/50 rounded overflow-hidden">
-                <div 
-                  className={`px-2 py-1.5 cursor-pointer hover:bg-neutral-800 flex items-center gap-2 ${isExpanded ? 'bg-neutral-800' : ''}`}
-                  onClick={() => setExpandedFile(isExpanded ? null : filename)}
-                >
-                   {isExpanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
-                   <span className="text-blue-400 font-semibold truncate">{displayName}</span>
-                </div>
-                {isExpanded && (
+        {activeTab === 'files' ? (
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {visibleFiles.map(filename => {
+              const isExpanded = expandedFile === filename;
+              const content = fileSystem.read(filename) || '';
+              const displayName = fileSystem.getDisplayName(filename);
+              
+              return (
+                <div key={filename} ref={isExpanded ? expandedRef : null} className="bg-neutral-800/50 rounded overflow-hidden">
                   <div 
-                    className="p-2 border-t border-neutral-700 bg-black text-gray-400 whitespace-pre-wrap text-[10px] md:text-xs leading-relaxed"
-                    onClick={handleContentClick}
+                    className={`px-2 py-1.5 cursor-pointer hover:bg-neutral-800 flex items-center gap-2 ${isExpanded ? 'bg-neutral-800' : ''}`}
+                    onClick={() => setExpandedFile(isExpanded ? null : filename)}
                   >
-                    <span dangerouslySetInnerHTML={{ __html: parseLinks(formatContent(content)) }} />
+                     {isExpanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
+                     <span className="text-blue-400 font-semibold truncate">{displayName}</span>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {isExpanded && (
+                    <div 
+                      className="p-2 border-t border-neutral-700 bg-black text-gray-400 whitespace-pre-wrap text-[10px] md:text-xs leading-relaxed"
+                      onClick={handleContentClick}
+                    >
+                      <span dangerouslySetInnerHTML={{ __html: parseLinks(formatContent(content)) }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-hidden">
+            <MapPanel fileSystem={fileSystem} files={files} username={username} debugMode={debugMode} />
+          </div>
+        )}
       </div>
 
       {/* Status Section */}

@@ -308,6 +308,12 @@ function App() {
     const filename = fileSystem.findFileByReference(ref);
     if (filename) {
       setExpandedFile(filename);
+    } else {
+      setNarrative(prev => [...prev, {
+        id: Date.now().toString(),
+        text: `System: Could not find any file matching reference "${ref}".`,
+        type: 'system'
+      }]);
     }
   };
 

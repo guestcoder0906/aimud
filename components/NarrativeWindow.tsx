@@ -34,16 +34,25 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
     if (debugMode) {
       processed = processed.replace(/hide\[(.*?)\]/gs, (match, p1) => `<span class="bg-yellow-900/30 text-yellow-300 px-1 rounded border border-yellow-700/50 border-dashed">${p1}</span>`);
     } else {
-      processed = processed.replace(/hide\[.*?\]/gs, '<span class="text-gray-600 italic font-mono">[hidden]</span>');
+      processed = processed.replace(/hide\[.*?\]/gs, '<span class="text-gray-600 italic font-mono">&#91;hidden&#93;</span>');
     }
 
-    // 3. Handle [Object] links
-    // We split by the regex and map to React elements to avoid dangerouslySetInnerHTML for the whole thing where possible,
-    // but mixing regexes is tricky. For a terminal app, dangerous HTML with strict regex control is often cleaner for "rich text".
-    processed = processed.replace(/\[([^\]]+)\]/g, (match, ref) => {
-       // Avoid matching inside HTML tags we just created
-       if (match.includes('span class')) return match;
-       return `<span class="text-yellow-400 hover:text-yellow-200 hover:underline cursor-pointer" data-ref="${ref}">${ref}</span>`;
+    // 3. Handle Status/Effect/Outcome effects specially so they don't become clickable links
+    // This catches patterns like [Status:Hidden(...)], [Effect:Poison], [Jump: Failure], [Perception: Success]
+    processed = processed.replace(/\[((?:Status|Effect)\s*:[^\]]+)\]/gi, (match) => {
+      return `<span class="text-blue-400 bg-blue-900/20 px-1 rounded border border-blue-800/50 font-semibold">${match}</span>`;
+    });
+
+    processed = processed.replace(/\[([^\]]+:\s*(?:Success|Failure|Critical Success|Critical Failure)[^\]]*)\]/gi, (match) => {
+      const isSuccess = match.toLowerCase().includes('success');
+      const color = isSuccess ? 'text-green-400 bg-green-900/20 border-green-800/50' : 'text-red-400 bg-red-900/20 border-red-800/50';
+      return `<span class="${color} px-1 rounded border font-semibold">${match}</span>`;
+    });
+
+    // 4. Handle [Object] links
+    processed = processed.replace(/(<[^>]+>)|\[([^\]]+)\]/g, (match, htmlTag, ref) => {
+      if (htmlTag) return htmlTag;
+      return `<span class="text-yellow-400 hover:text-yellow-200 hover:underline cursor-pointer" data-ref="${ref}">${ref}</span>`;
     });
 
     return processed;
@@ -64,18 +73,17 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
           Initializing system connection...
         </div>
       )}
-      
+
       {history.map((entry) => {
         const parsedHtml = parseText(entry.text);
         // If the entire entry is hidden (e.g., only contained a target() not meant for us), don't render an empty div
         if (!parsedHtml.trim() && entry.type !== 'user') return null;
 
         return (
-          <div key={entry.id} className={`narrative-entry leading-relaxed ${
-            entry.type === 'user' ? 'text-blue-400 font-bold border-l-2 border-blue-900 pl-2' : 
-            entry.type === 'system' ? 'text-green-500 italic' : 
-            'text-gray-300'
-          }`}>
+          <div key={entry.id} className={`narrative-entry leading-relaxed ${entry.type === 'user' ? 'text-blue-400 font-bold border-l-2 border-blue-900 pl-2' :
+            entry.type === 'system' ? 'text-green-500 italic' :
+              'text-gray-300'
+            }`}>
             {entry.type === 'user' && <span className="mr-2">&gt;</span>}
             <span dangerouslySetInnerHTML={{ __html: parsedHtml }} />
           </div>

@@ -13,7 +13,7 @@ const SYSTEM_PROMPT = `You are the backend engine for an AI-SUD system. Your rol
 7. Use hide[...] syntax for information not yet revealed to player
 8. Use target(Player1, Player2)[Secret message] syntax for private narrative or NPC dialogue meant only for specific players.
 9. Update files dynamically and accurately
-10. NEVER forget to create/update files for NPCs, items, locations, or any entities that appear
+10. NEVER forget to create/update files for NPCs, items, locations, or any entities that appear, as well as things loosely referenced that the player could interact with
 
 GROUP ENTITY RULE:
 - If there are multiple of the same type of creature/NPC (e.g., 3 Goblins), do NOT create separate files for each.
@@ -43,14 +43,33 @@ FILE DETAIL RULE (CRITICAL):
 - Do not write vague or short descriptions. Include deep lore, precise physical dimensions, exact quantitative stats, psychological profiles for NPCs, and exhaustive inventory lists.
 - You MUST explicitly include the physical size, dimensions, and weight for EVERY character, creature, NPC, and item in their respective files.
 - Make the files long and comprehensive.
+- IMPORTANT MINIMIZATION RULE: ONLY include files in the 'files' object if they are NEW, MODIFIED, or DELETED. If a file is completely unchanged, DO NOT include it in the response at all (it will persist automatically). NEVER use null to mean 'no change' (null means DELETE). NEVER truncate file content with ellipses (...).
+
+LOOSE REFERENCE RULE (CRITICAL):
+- Make a file for each thing even if it is only loosely referenced (e.g., a professor or a home mentioned in passing), IF the player themselves could possibly interact with it, know it, or will know it in the future/past/present.
+- Do NOT make a file for universally known or unreachable loose concepts that the player won't interact with directly (e.g., a college student hearing about the "moon" in a conversation wouldn't trigger a file for the moon).
+- For loosely referenced things, the file doesn't need to show full details initially—only whatever details were loosely mentioned—unless full detail is later needed or it becomes no longer loosely referenced.
 
 CRITICAL FILE MANAGEMENT RULES:
 - Create a "Guide.txt" file that references these instructions and acts as the internal operating manual
 - Create "WorldRules.txt" defining physics, magic, tech, logic, time costs, and encumbrance effects
-- Create character files named "character-USERNAME.txt" for each player with DYNAMIC attributes specific to their character (health, energy, inventory, knowledge, etc.). MUST include explicit physical details: size, dimensions, and weight.
+- Create "CurrentMap.json" to track the live map of the player's current location (50-200 meter scale). MUST be valid JSON.
+  * Update this file accurately in real-time based on context, location, dimensions, and speed.
+  * Structure: \`{ "scale": "50m", "areas": [{ "id": "a1", "name": "Room Name", "type": "room|hallway|field|forest|water|building|furniture|npc|obstacle|vehicle", "shape": "rect|circle|polygon", "x": 0, "y": 0, "width": 10, "height": 10, "radius": 5, "points": "0,0 10,10 0,10", "visible": true}], "players": [{ "username": "PlayerName", "x": 5, "y": 5, "facing": 0, "vision": { "mainAngle": 66, "peripheralAngle": 90, "detailedRange": 20, "maxRange": 50} }] }\`
+  * \`visible\`: false means it's greyed out (fog of war) because the player remembers it but can't currently see it.
+  * Completely unknown/unseen elements MUST be omitted from the map entirely, unless detected by other senses (magic, hearing, echolocation).
+  * Ensure correct geometry and scale for all elements using \`shape\`, \`width\`, \`height\`, \`radius\`, or \`points\`.
+  * \`facing\`: angle in degrees (0 is right, 90 is down, 180 is left, 270 is up).
+  * \`vision\`: contains the player's dynamic vision capabilities.
+  * Include all player-visible elements within the scale (npcs, furniture, buildings, vehicles, etc.).
+  * You MUST show all visible, sensed, or last known NPC locations on the map in the 'areas' array (type: 'npc').
+  * You MUST provide correct physical dimensions for NPCs using width/height or radius corresponding exactly to the size in their files.
+  * Use hide[Secret Room] or target(PlayerName)[Secret Room] for area names if they are hidden or only known to specific players.
+  * Ensure scaling and coordinates are consistent.
+- Create character files named "character-USERNAME.txt" for each player with DYNAMIC attributes specific to their character (health, energy, inventory, knowledge, etc.). MUST include explicit physical details: size, dimensions, weight, and base speed stats (walking, flying, trotting, running, etc. affected by context/effects).
 - If a player's health reaches 0, DELETE their character file.
 - Create "WorldTime.txt" with ACTUAL date/time/year appropriate for the world setting
-- Create files for EVERY entity that appears: NPCs, items, locations. MUST include explicit physical details for entities/items: size, dimensions, and weight.
+- Create files for EVERY entity that appears: NPCs, items, locations, vehicles, projectiles. MUST include explicit physical details for entities/items: size, dimensions, weight, and base speed stats if capable of movement (e.g., cars, paper airplanes).
 - Use hide[...] for secrets/traps/hidden info in files - this content is completely hidden from player view
 - Use target(PlayerName)[content] in files or narrative to restrict visibility to specific players.
 - Track unique instances: [ObjectType_ID(status)]
@@ -108,7 +127,8 @@ export class AIEngine {
 
   constructor(fileSystem: FileSystem) {
     this.fs = fileSystem;
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const storedKey = typeof window !== 'undefined' ? localStorage.getItem('aimud_apikey') : null;
+    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || storedKey || '' });
   }
 
   async initialize(startingPrompt: string): Promise<AIResponse | null> {
@@ -152,7 +172,7 @@ export class AIEngine {
         try {
           data = JSON.parse(match[1]);
         } catch (e2) {
-           return { narrative: "System Error: AI returned invalid JSON." };
+          return { narrative: "System Error: AI returned invalid JSON." };
         }
       } else {
         return { narrative: "System Error: AI returned invalid format." };
@@ -173,7 +193,7 @@ export class AIEngine {
         };
       });
 
-      const resultReport = results.map(r => 
+      const resultReport = results.map(r =>
         `Check: ${r.name}\nReason: ${r.description}\nRoll: ${r.roll} / 1000\nThresholds: ${JSON.stringify(r.thresholds)}\nRESULT: ${r.outcome}`
       ).join('\n\n');
 
@@ -199,10 +219,10 @@ export class AIEngine {
     if (!thresholds || typeof thresholds !== 'object') {
       return roll >= 500 ? "Success" : "Failure";
     }
-    
+
     const sorted = Object.entries(thresholds)
       .sort(([, valA], [, valB]) => valB - valA);
-    
+
     for (const [outcome, minVal] of sorted) {
       if (roll >= minVal) return outcome;
     }
@@ -211,7 +231,7 @@ export class AIEngine {
 
   private processResponseData(data: AIResponse) {
     if (!data) return;
-    
+
     if (data.files && typeof data.files === 'object' && !Array.isArray(data.files)) {
       for (const [filename, fileData] of Object.entries(data.files)) {
         if (fileData === null || (typeof fileData === 'object' && fileData.content === null)) {
@@ -219,7 +239,8 @@ export class AIEngine {
         } else if (typeof fileData === 'string') {
           this.fs.write(filename, fileData);
         } else if (fileData && typeof fileData === 'object' && fileData.content) {
-          this.fs.write(filename, fileData.content, fileData.displayName);
+          const contentStr = typeof fileData.content === 'object' ? JSON.stringify(fileData.content) : fileData.content;
+          this.fs.write(filename, contentStr, fileData.displayName);
         }
       }
     }
@@ -228,7 +249,7 @@ export class AIEngine {
   private async callAI(prompt: string): Promise<string> {
     try {
       const response = await this.ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-flash-image-preview',
         contents: prompt,
         config: {
           systemInstruction: SYSTEM_PROMPT,
