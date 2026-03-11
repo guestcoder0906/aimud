@@ -177,20 +177,10 @@ export class AIEngine {
     let data: AIResponse;
 
     try {
-      data = JSON.parse(responseText);
+      data = this.extractJSON(responseText);
     } catch (e) {
-      console.error("JSON Parse Error", e, responseText);
-      // Attempt to clean markdown json blocks if present
-      const match = responseText.match(/```json([\s\S]*?)```/);
-      if (match) {
-        try {
-          data = JSON.parse(match[1]);
-        } catch (e2) {
-          return { narrative: "System Error: AI returned invalid JSON." };
-        }
-      } else {
-        return { narrative: "System Error: AI returned invalid format." };
-      }
+      console.error("JSON extraction/parse Error", e, responseText);
+      return { narrative: "System Error: AI returned invalid JSON format." };
     }
 
     // Phase 2: If checks are required
@@ -217,8 +207,7 @@ export class AIEngine {
       // (The FS is the history source of truth).
       responseText = await this.callAI(followUpPrompt);
       try {
-        const match = responseText.match(/```json([\s\S]*?)```/);
-        data = match ? JSON.parse(match[1]) : JSON.parse(responseText);
+        data = this.extractJSON(responseText);
       } catch (e) {
         console.error("JSON Parse Error Phase 2", e);
         return { narrative: "Error processing check results." };
@@ -227,6 +216,56 @@ export class AIEngine {
 
     this.processResponseData(data);
     return data;
+  }
+
+  private extractJSON(text: string): any {
+    // 1. Direct parse attempt
+    try {
+      return JSON.parse(text);
+    } catch (e) { }
+
+    // 2. Locate the first { and try to find the balancing }
+    let start = text.indexOf('{');
+    if (start === -1) throw new Error("No JSON object found");
+
+    // Try to find the matching closing brace
+    let braceCount = 0;
+    let end = -1;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') braceCount++;
+      else if (text[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+
+    if (end !== -1) {
+      const candidate = text.substring(start, end + 1);
+      try {
+        return JSON.parse(candidate);
+      } catch (e) { }
+    }
+
+    // 3. Fallback to markdown blocks if present
+    const mdMatch = text.match(/```json([\s\S]*?)```/);
+    if (mdMatch) {
+      try {
+        return JSON.parse(mdMatch[1]);
+      } catch (e) { }
+    }
+
+    // 4. Last ditch: greedy match
+    const greedyMatch = text.match(/\{[\s\S]*\}/);
+    if (greedyMatch) {
+      try {
+        return JSON.parse(greedyMatch[0]);
+      } catch (e) { }
+    }
+
+    throw new Error("Failed to extract valid JSON");
   }
 
   private determineOutcome(roll: number, thresholds: { [outcome: string]: number }): string {
