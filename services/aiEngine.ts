@@ -93,7 +93,7 @@ CRITICAL FILE MANAGEMENT RULES:
 - Create "WorldRules.txt" defining physics, magic, tech, logic, time costs, and encumbrance effects.
 - Create "CurrentMap.json" to track the live map of the player's current location (50-200 meter scale). MUST be valid JSON.
   * Update this file accurately in real-time based on context, location, dimensions, and speed.
-  * Structure: \`{ "pages": [{ "name": "Region/Area Name", "scale": "50m", "areas": [{ "id": "a1", "name": "Room Name", "type": "room|hallway|field|forest|water|building|furniture|npc|obstacle|vehicle|fire|lava|poison|treasure", "shape": "rect|circle|polygon", "x": 0, "y": 0, "width": 10, "height": 10, "radius": 5, "points": "0,0 10,10 0,10", "visible": true}], "players": [{ "username": "PlayerName", "x": 5, "y": 5, "facing": 0, "vision": { "mainAngle": 66, "peripheralAngle": 90, "detailedRange": 20, "maxRange": 50} }], "notes": [{ "x": 10, "y": 10, "text": "Fire", "type": "danger|info|warning|discovery"}] }] }\`
+  * Structure: \`{ "pages": [{ "name": "Region/Area Name", "scale": "50m", "areas": [{ "id": "a1", "name": "Room Name", "type": "room|hallway|field|forest|water|building|furniture|npc|obstacle|vehicle|fire|lava|poison|treasure|tech|magic|nature|portal|terminal|hazard", "shape": "rect|circle|polygon", "x": 0, "y": 0, "width": 10, "height": 10, "radius": 5, "points": "0,0 10,10 0,10", "visible": true}], "players": [{ "username": "PlayerName", "x": 5, "y": 5, "facing": 0, "vision": { "mainAngle": 66, "peripheralAngle": 90, "detailedRange": 20, "maxRange": 50} }], "notes": [{ "x": 10, "y": 10, "text": "Fire", "type": "danger|info|warning|discovery"}] }] }\`
   * Map Pages Rule: If all active players are in the same general region, generate a single page in the "pages" array. If players are geographically far apart (e.g. different towns, deep dungeon vs surface), separate them into multiple distinct pages within the "pages" array.
   * \`notes\`: Use for dynamic annotations like "Fire", "Toxic Gas", "Discovery", "Clue", "Exit", etc. for specific coordinates.
   * \`visible\`: false means it's greyed out (fog of war).
@@ -104,7 +104,11 @@ CRITICAL FILE MANAGEMENT RULES:
   * Include all player-visible elements within the scale (npcs, furniture, buildings, vehicles, hazards, etc.).
   * You MUST show ALL active players on the map in the 'players' array.
   * You MUST show all visible, sensed, or last known NPC locations on the map in the 'areas' array (type: 'npc').
-  * CRITICAL: Make the map highly detailed. Add small details like furniture, individual trees, hazards, or ground texture as separate areas or via the \`notes\` array. Use \`notes\` for anything that isn't a physical structure but is an important environmental effect (e.g., "Heavy Fire", "Poison Gas").
+  * CRITICAL: Make the map highly detailed. Add small details like furniture, individual trees, hazards, or ground texture as separate areas or via the \`notes\` array. Use \`notes\` for anything that isn't a physical structure but is an important environmental effect (e.g., "Heavy Fire", "Poison Gas", "Strange Energy", "Digital Glitch").
+  * Use \`type: tech/terminal\` for cyberpunk/sci-fi elements.
+  * Use \`type: magic/portal\` for fantasy/supernatural elements.
+  * Use \`type: nature/hazard\` for environmental obstacles.
+  * Use \`type: treasure/loot\` for items or points of interest.
   * Use hide[Secret Room] or target(PlayerName)[Secret Room] for area names if they are forgotten, hidden or only known to specific players.
   * Ensure scaling and coordinates are consistent.
 - Create character files named "CharacterName-USERNAME.txt" for each player using the ENTITY FILE SCHEMA.

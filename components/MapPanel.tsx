@@ -184,6 +184,15 @@ export default function MapPanel({ fileSystem, files, username, debugMode }: Map
       case 'treasure':
       case 'loot':
         return 'fill-yellow-400/60 stroke-yellow-200';
+      case 'tech':
+      case 'terminal':
+        return 'fill-cyan-900/60 stroke-cyan-400 shadow-[0_0_5px_rgba(34,211,238,0.5)]';
+      case 'magic':
+      case 'portal':
+        return 'fill-purple-900/60 stroke-purple-400 animate-pulse';
+      case 'nature':
+      case 'hazard':
+        return 'fill-amber-950/40 stroke-amber-800';
       default:
         return 'fill-neutral-800/40 stroke-neutral-600';
     }
