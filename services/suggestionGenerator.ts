@@ -281,7 +281,7 @@ export class SuggestionGenerator {
             const scenarioTemplates = [
                 () => `Exploring ${getRandomCompatible(settings, theme)} seeking ${getRandomCompatible(goals, theme)}.`,
                 () => `You are in ${getRandomCompatible(settings, theme)}.`,
-                () => `Survive ${getRandomCompatible(settings, theme)} - ${getRandomCompatible(weirdFacts, theme)}.`,
+                () => `Survive ${getRandomCompatible(settings, theme)} where ${getRandomCompatible(weirdFacts, theme)}.`,
                 () => `${getRandomCompatible(settings, theme)}`,
                 () => `Finding ${getRandomCompatible(goals, theme)} in ${getRandomCompatible(names, theme)}.`
             ];
@@ -314,7 +314,7 @@ export class SuggestionGenerator {
                 () => `Conflict in ${getRandomCompatible(names, theme)} between ${getRandomCompatible(creatures, theme)} and ${getRandomCompatible(creatures, theme)}.`,
                 // Shorter phrases
                 () => `${getRandomCompatible(adjectives, theme).toUpperCase()} ${getRandomCompatible(names, theme).toUpperCase()}`,
-                () => `${getRandomCompatible(settings, theme)}: ${getRandomCompatible(dangers, theme)}`,
+                () => `${getRandomCompatible(settings, theme)} plagued by ${getRandomCompatible(dangers, theme)}`,
                 () => `Journey to ${getRandomCompatible(settings, theme)}`,
                 () => `The ${getRandomCompatible(creatures, theme)} of ${getRandomCompatible(names, theme)}`,
                 () => `${getRandomCompatible(goals, theme)} in ${getRandomCompatible(settings, theme)}`
