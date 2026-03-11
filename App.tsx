@@ -461,7 +461,7 @@ function App() {
 
         <InputArea
           onSend={handleAction}
-          disabled={isProcessing || gameOver || isMyTurnReady || showCharacterCreation || (gameMode === 'multiplayer' && roomState?.gameState !== 'playing')}
+          disabled={isProcessing || gameOver || isMyTurnReady || showCharacterCreation || (gameMode === 'multiplayer' && roomState?.gameState !== 'playing' && !(roomState?.gameState === 'waiting_for_world' && isHost))}
           recommendations={(autoRecommendationsEnabled && !showCharacterCreation && (gameMode === 'singleplayer' || roomState?.gameState === 'playing')) ? recommendations : []}
         />
       </div>
