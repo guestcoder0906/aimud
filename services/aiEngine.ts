@@ -251,7 +251,7 @@ export class AIEngine {
   private async callAI(prompt: string): Promise<string> {
     try {
       const response = await this.ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-3.1-flash-lite-preview',
         contents: prompt,
         config: {
           systemInstruction: SYSTEM_PROMPT,
