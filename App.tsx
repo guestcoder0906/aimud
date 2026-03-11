@@ -125,7 +125,15 @@ function App() {
 
         const result = await aiEngine.processAction(combinedInput);
         if (result) {
-          const newNarrative = [...(roomState?.narrative || []), { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }];
+          const formattedPlayersActions = Object.entries(inputs)
+            .map(([user, action]) => `[${user}]: ${action}`)
+            .join('\n');
+
+          const newNarrative = [
+            ...(roomState?.narrative || []),
+            { id: Date.now().toString() + 'user', text: formattedPlayersActions, type: 'user' },
+            { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }
+          ];
           const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
           const newUpdates = [...safeUpdates, ...(roomState?.updates || [])].slice(0, 50);
 
