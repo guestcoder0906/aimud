@@ -290,7 +290,7 @@ export class SuggestionGenerator {
             const scenarioPart = scenarioTemplates[Math.floor(Math.random() * scenarioTemplates.length)]();
 
             const res = Math.random() > 0.3
-                ? `CHARACTER: ${charPart}. SCENARIO: ${scenarioPart}`
+                ? `${charPart}. ${scenarioPart}`
                 : `${charPart} in ${scenarioPart}`;
             if (!suggestions.includes(res)) {
                 suggestions.push(res);
