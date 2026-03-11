@@ -69,8 +69,9 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono bg-black min-h-0" onClick={handleClick}>
       {history.length === 0 && (
-        <div className="text-green-500 italic">
-          Initializing system connection...
+        <div className="text-green-500 italic flex flex-col gap-2">
+          <span>Initializing system connection...</span>
+          <span>Enter world description to start adventure....</span>
         </div>
       )}
 

@@ -216,11 +216,15 @@ export class MultiplayerService {
     // Fetch host dynamically from DB to avoid staleness
     const { data } = await this.supabase.from('rooms').select('host_username').eq('id', this.roomId).single();
     if (data) {
-      this.channel.send({
-        type: 'broadcast',
-        event: 'submit_action',
-        payload: { username: this.currentUsername, action, host: data.host_username }
-      });
+      if (this.currentUsername === data.host_username) {
+        this.handlePlayerActionAsHost(this.currentUsername, action);
+      } else {
+        this.channel.send({
+          type: 'broadcast',
+          event: 'submit_action',
+          payload: { username: this.currentUsername, action, host: data.host_username }
+        });
+      }
     }
   }
 
@@ -271,12 +275,16 @@ export class MultiplayerService {
   async createCharacter(description: string) {
     if (!this.roomId || !this.channel) return;
     const { data } = await this.supabase.from('rooms').select('host_username').eq('id', this.roomId).single();
-    if (data) {
-      this.channel.send({
-        type: 'broadcast',
-        event: 'create_character',
-        payload: { username: this.currentUsername, description, host: data.host_username }
-      });
+    if (data && this.currentUsername) {
+      if (this.currentUsername === data.host_username) {
+        this.onHostCreateCharacter({ username: this.currentUsername, description });
+      } else {
+        this.channel.send({
+          type: 'broadcast',
+          event: 'create_character',
+          payload: { username: this.currentUsername, description, host: data.host_username }
+        });
+      }
     }
   }
 
@@ -293,7 +301,14 @@ export class MultiplayerService {
         // Update hasCharacter based on file existence
         if (state.players && state.fileSystemState?.files) {
           state.players.forEach((p: any) => {
-            p.hasCharacter = Object.keys(state.fileSystemState.files).some(f => f.toLowerCase().endsWith(`-${p.username.toLowerCase()}.txt`));
+            const uLower = p.username.toLowerCase();
+            p.hasCharacter = Object.keys(state.fileSystemState.files).some(f => {
+              const lowerF = f.toLowerCase();
+              return lowerF.endsWith(`-${uLower}.txt`) ||
+                lowerF.endsWith(`_${uLower}.txt`) ||
+                lowerF.endsWith(` ${uLower}.txt`) ||
+                lowerF.replace(/\.txt$/, '').trim().endsWith(uLower);
+            });
           });
         }
 

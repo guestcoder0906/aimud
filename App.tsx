@@ -103,10 +103,14 @@ function App() {
         const me = state.players.find((p: any) => p.username === localStorage.getItem('aimud_username'));
         const myUsername = me?.username?.toLowerCase();
 
-        // Find if any file ends with -username.txt
-        const myCharacterFileExists = Object.keys(state.fileSystemState?.files || {}).some(f =>
-          f.toLowerCase().endsWith(`-${myUsername}.txt`)
-        );
+        // Find if any file ends with -username.txt or similar variations
+        const myCharacterFileExists = Object.keys(state.fileSystemState?.files || {}).some(f => {
+          const lowerF = f.toLowerCase();
+          return lowerF.endsWith(`-${myUsername}.txt`) ||
+            lowerF.endsWith(`_${myUsername}.txt`) ||
+            lowerF.endsWith(` ${myUsername}.txt`) ||
+            lowerF.replace(/\.txt$/, '').trim().endsWith(myUsername);
+        });
 
         if (state.gameState !== 'waiting_for_world' && me && !myCharacterFileExists) {
           setShowCharacterCreation(true);
@@ -417,16 +421,25 @@ function App() {
               className="w-full h-32 bg-black border border-neutral-700 p-2 text-white font-mono mb-4"
               placeholder="e.g., A rogue elf with a mysterious past..."
             />
-            <button
-              onClick={() => {
-                multiplayerService?.createCharacter(characterDescription);
-                setShowCharacterCreation(false);
-              }}
-              disabled={!characterDescription}
-              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-2 rounded font-mono"
-            >
-              Submit Character
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleLeaveGame}
+                className="w-1/3 bg-neutral-800 hover:bg-neutral-700 text-gray-300 p-2 rounded font-mono transition-colors"
+                title="Leave the multiplayer session"
+              >
+                Cancel / Leave
+              </button>
+              <button
+                onClick={() => {
+                  multiplayerService?.createCharacter(characterDescription);
+                  setShowCharacterCreation(false);
+                }}
+                disabled={!characterDescription}
+                className="w-2/3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-2 rounded font-mono transition-colors"
+              >
+                Submit Character
+              </button>
+            </div>
           </div>
         </div>
       )}
