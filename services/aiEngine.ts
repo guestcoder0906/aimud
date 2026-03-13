@@ -615,11 +615,19 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
         const difficulty = check.difficulty || 'moderate';
 
         // Compute cumulative global bonus from all files (stats, items, rules, effects)
-        const globalBonus = this.calculateGlobalBonus(check.stat || safeName, username);
+        const bonusResult = this.calculateGlobalBonus(check.stat || safeName, username);
+        const globalBonus = bonusResult.total;
         
         // Apply manual modifier if present, added to the global bonus
         const manualMod = check.modifier || 0;
         const totalBonus = globalBonus + manualMod;
+        
+        // Build math breakdown string
+        let mathBreakdown = bonusResult.breakdown;
+        if (manualMod !== 0) {
+          mathBreakdown += (mathBreakdown ? ' + ' : '') + `AI_Modifier: ${manualMod > 0 ? '+' : ''}${manualMod}`;
+        }
+        if (!mathBreakdown) mathBreakdown = 'No modifiers found';
         
         let safeThresholds: { [key: string]: number };
         if (check.thresholds && typeof check.thresholds === 'object') {
@@ -658,16 +666,17 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
           description: safeDesc,
           outcome: outcome,
           roll: roll,
-          thresholds: safeThresholds
+          thresholds: safeThresholds,
+          math: mathBreakdown
         };
       });
 
       const resultReport = results.map(r =>
-        `Check: ${r.name}\nReason: ${r.description}\nRoll: ${r.roll} / 1000\nThresholds: ${JSON.stringify(r.thresholds)}\nRESULT: ${r.outcome}`
+        `Check: ${r.name}\nReason: ${r.description}\nRoll: ${r.roll} / 1000\nMath: ${r.math}\nThresholds: ${JSON.stringify(r.thresholds)}\nRESULT: ${r.outcome}`
       ).join('\n\n');
 
       const fullDetailsHtml = results.map(r =>
-        `[Probability Check: ${r.name} - Result: ${r.outcome} | Roll: ${r.roll}/1000 | Thresholds: ${JSON.stringify(r.thresholds).replace(/"/g, '&quot;')}]`
+        `[Probability Check: ${r.name} - Result: ${r.outcome} | Roll: ${r.roll}/1000 | Math: ${r.math} | Thresholds: ${JSON.stringify(r.thresholds).replace(/"/g, '&quot;')}]`
       ).join(' ');
 
       const followUpPrompt = `PREVIOUS CONTEXT: ${userPrompt}\n\n[SYSTEM: Probability Engine Results]\n\n${resultReport}\n\nBased on these FAIR and FINAL results, generate the highly detailed narrative and extensive file updates. Calculate exact dynamic outcomes (e.g., damage = base * probability result) WITHOUT using dice notation. 
@@ -948,9 +957,10 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
    * 3. Item bonuses
    * 4. Active status effects
    */
-  private calculateGlobalBonus(statName: string, username?: string): number {
+  private calculateGlobalBonus(statName: string, username?: string): { total: number, breakdown: string } {
     const files = this.fs.getAll();
     let totalBonus = 0;
+    const breakdownParts: string[] = [];
     const statLower = statName.toLowerCase();
     
     // 1. Identify active status effect IDs for this player
@@ -975,7 +985,11 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
         // Handle optional bullet points/numbers at start
         const statLineMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*(\w+)\s*[:=]\s*(.*)$/);
         if (statLineMatch && statLineMatch[1] === statLower) {
-          totalBonus += this.parseFormula(line, files);
+          const formulaBonus = this.parseFormula(line, files);
+          totalBonus += formulaBonus;
+          if (formulaBonus !== 0) {
+            breakdownParts.push(`${statName}_Base: ${formulaBonus > 0 ? '+' : ''}${formulaBonus}`);
+          }
           continue;
         }
 
@@ -984,7 +998,13 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
         const globalModRegex = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|grant|)\s*(\w+)/i;
         const gm = line.match(globalModRegex);
         if (gm && gm[2].toLowerCase() === statLower) {
-          totalBonus += this.parseValue(gm[1]);
+          const val = this.parseValue(gm[1]);
+          totalBonus += val;
+          if (val !== 0) {
+            // Include source if possible (filename)
+            const source = filename.replace('.txt', '');
+            breakdownParts.push(`${source}: ${val > 0 ? '+' : ''}${val}`);
+          }
           continue;
         }
         
@@ -997,7 +1017,11 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
             if (modMatch) {
               // Verify the modifier is for this specific stat
               if (lLower.includes(statLower)) {
-                totalBonus += this.parseValue(modMatch[1]);
+                const val = this.parseValue(modMatch[1]);
+                totalBonus += val;
+                if (val !== 0) {
+                  breakdownParts.push(`${effectId}: ${val > 0 ? '+' : ''}${val}`);
+                }
               }
             }
           }
@@ -1005,7 +1029,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
       }
     }
 
-    return totalBonus;
+    return { total: totalBonus, breakdown: breakdownParts.join(' + ').replace(/\+ -/g, '- ') };
   }
 
   /**
