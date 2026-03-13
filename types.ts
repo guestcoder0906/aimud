@@ -25,6 +25,7 @@ export interface UpdateItem {
 export interface CheckDef {
   name?: string;
   description?: string;
+  difficulty?: 'trivial' | 'easy' | 'moderate' | 'hard' | 'very_hard' | 'near_impossible';
   thresholds?: { [outcome: string]: number };
   // Alternate AI format fields
   check?: string;

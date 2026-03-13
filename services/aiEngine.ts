@@ -68,8 +68,29 @@ PROBABILITY ENGINE RULE (CRITICAL):
   * Physical feats (Climbing, jumping, lifting, swimming)
   * Magic or Technical operations with risk
   * Resistance against effects or toxins
-- If an action should be modified by stats (e.g., Agility, Strength), you MUST define thresholds in the "checks" object that reflect those stats.
+- If an action should be modified by stats (e.g., Agility, Strength), you MUST define a "stat" field in the "checks" object that matches the exact stat name (e.g., "Agility", "Perception").
+- The backend engine will automatically calculate and apply all relevant mathematical modifiers from all active files (character stats, items, status effects, and world rules) based on this "stat" field.
 - If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
+
+THRESHOLD CALIBRATION (CRITICAL — READ CAREFULLY):
+- The roll range is 0-1000. Thresholds define the MINIMUM roll needed for each outcome tier.
+- The system determines the outcome by checking tiers from highest threshold to lowest. If the roll is below ALL thresholds, the result is "Failure" (or "Critical Failure" if applicable).
+- EVERY check MUST include a "difficulty" field set to one of: "trivial", "easy", "moderate", "hard", "very_hard", "near_impossible".
+- Difficulty determines realistic threshold ranges. Use these as BASE guidelines (before stat modifiers):
+  * Trivial (walking, opening an unlocked door): Success ~150+. Failure range ~15%.
+  * Easy (simple climb, basic persuasion): Success ~300+. Failure range ~30%.
+  * Moderate (combat strike, picking a lock, convincing a skeptic): Success ~450-550+. Failure range ~45-55%.
+  * Hard (acrobatic feat, hacking a secure terminal, dodging gunfire): Success ~600-700+. Failure range ~60-70%.
+  * Very Hard (impossible shot, resisting powerful magic, outrunning an explosion): Success ~750-850+. Failure range ~75-85%.
+  * Near Impossible (catching a bullet, persuading a sworn enemy): Success ~900+. Failure range ~90%.
+- STAT MODIFIERS adjust the base threshold up or down (e.g., high Agility lowers a dodge threshold by 50-100 points; low Strength raises a lifting threshold by 50-100 points).
+- Advantage effects (buffs, good positioning, surprise) LOWER the threshold (making success easier).
+- Disadvantage effects (debuffs, injuries, bad terrain) RAISE the threshold (making success harder).
+- CRITICAL: Do NOT set all thresholds below 200. Most actions in a dangerous world have a real chance of failure. A sword swing against an armored foe should NOT succeed 90% of the time.
+- Include "Critical Success" (highest tier) and optionally "Partial Success" between Success and Failure.
+- Example moderate combat check: {"name": "Sword Strike", "difficulty": "moderate", "thresholds": {"Critical Success": 850, "Success": 500, "Partial Success": 300}}
+- Example easy check with stat bonus: {"name": "Climb Fence", "difficulty": "easy", "thresholds": {"Success": 250, "Partial Success": 150}}
+- Example hard check: {"name": "Dodge Arrow", "difficulty": "hard", "thresholds": {"Critical Success": 950, "Success": 700, "Partial Success": 500}}
 
 DYNAMIC STATS RULE (CRITICAL):
 - Stats must NOT be stale numbers (e.g., "Agility: 25").
@@ -217,11 +238,22 @@ For starting prompt, create initial world files with appropriate time/year and s
 export class AIEngine {
   private fs: FileSystem;
   private ai: GoogleGenAI;
+  private lastValidMap: string | null = null;
 
   constructor(fileSystem: FileSystem) {
     this.fs = fileSystem;
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('aimud_apikey') : null;
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || storedKey || '' });
+    // Initialize the last valid map from current storage
+    const existingMap = this.fs.read('CurrentMap.json');
+    if (existingMap) {
+      try {
+        JSON.parse(existingMap);
+        this.lastValidMap = existingMap;
+      } catch (e) {
+        // Existing map is already corrupt, nothing we can do
+      }
+    }
   }
 
   private taskQueue: Promise<any> = Promise.resolve();
@@ -235,7 +267,7 @@ export class AIEngine {
             : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
           const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".\nCRITICAL: Any magic, abilities, or spells MUST be highly specific with strict limits, energy costs, ranges, and target caps. Vague "magic" is completely unacceptable.`;
-          const res = await this.handleRequest(prompt);
+          const res = await this.handleRequest(prompt, undefined, username);
           resolve(res);
         } catch (e) {
           console.error("Initialization failed", e);
@@ -280,11 +312,13 @@ CRITICAL REMINDER:
 8. MAP POSITION UPDATE (CRITICAL): You MUST update CurrentMap.json in EVERY response. The SPATIAL CONTEXT above shows exact distances — use those numbers. If the player interacts with anything, move them to the appropriate position. If they are too far, move them toward it by their speed × time. Always update facing direction.${mapScreenshot ? '\n9. A screenshot of the current map is attached. Use it to visually verify spatial consistency.' : ''}
 ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. If NO file ends in "-${username}.txt", you MUST create the character file immediately using the ENTITY FILE SCHEMA. If one ALREADY EXISTS, do NOT create another one.` : ''}`;
 
-          const res = await this.handleRequest(prompt, mapScreenshot);
+          const res = await this.handleRequest(prompt, mapScreenshot, username);
 
           // Post-process: enforce spatial consistency on the returned map
-          if (res && oldMapRaw) {
-            this.enforceSpatialConsistency(oldMapRaw, username);
+          // Use oldMapRaw if it was valid, otherwise fall back to lastValidMap
+          const referenceMap = oldMapRaw || this.lastValidMap;
+          if (res && referenceMap) {
+            this.enforceSpatialConsistency(referenceMap, username);
           }
 
           resolve(res);
@@ -480,6 +514,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
       if (modified) {
         const correctedJson = JSON.stringify(newMap.pages ? newMap : { pages: newPages });
         this.fs.write('CurrentMap.json', correctedJson);
+        this.lastValidMap = correctedJson;
       }
     } catch (e) {
       console.error('Spatial consistency enforcement failed', e);
@@ -555,7 +590,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
     return null;
   }
 
-  private async handleRequest(userPrompt: string, mapScreenshot?: string): Promise<AIResponse | null> {
+  private async handleRequest(userPrompt: string, mapScreenshot?: string, username?: string): Promise<AIResponse | null> {
     // Phase 1: Analyze/Execute
     let responseText = await this.callAI(userPrompt, mapScreenshot);
     let data: AIResponse;
@@ -577,23 +612,44 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
         // AI sometimes returns { check, stat, threshold, modifier } instead of { name, thresholds }
         const safeName = check.name || check.check || check.stat || 'Action Check';
         const safeDesc = check.description || `Probability roll for ${safeName}`;
+        const difficulty = check.difficulty || 'moderate';
 
+        // Compute cumulative global bonus from all files (stats, items, rules, effects)
+        const globalBonus = this.calculateGlobalBonus(check.stat || safeName, username);
+        
+        // Apply manual modifier if present, added to the global bonus
+        const manualMod = check.modifier || 0;
+        const totalBonus = globalBonus + manualMod;
+        
         let safeThresholds: { [key: string]: number };
         if (check.thresholds && typeof check.thresholds === 'object') {
-          safeThresholds = check.thresholds;
+          safeThresholds = { ...check.thresholds };
         } else if (typeof check.threshold === 'number') {
-          // Convert flat threshold + modifier to proper thresholds object
+          // Convert flat threshold to proper thresholds object
           const base = check.threshold;
-          const mod = check.modifier || 0;
-          const adjusted = Math.max(0, Math.min(1000, base - mod));
+          const adjusted = Math.max(0, Math.min(1000, base));
           safeThresholds = {
             "Critical Success": Math.min(1000, adjusted + 200),
             "Success": adjusted,
-            "Partial Success": Math.max(0, adjusted - 150)
+            "Partial Success": Math.max(0, adjusted - 200)
           };
         } else {
-          safeThresholds = { "Success": 500 };
+          // No thresholds from the AI at all — use difficulty-based defaults
+          safeThresholds = this.getDefaultThresholds(difficulty);
         }
+
+        // Apply total computer bonus to lower the thresholds
+        // (A bonus reduces the required roll)
+        if (totalBonus !== 0) {
+          const shifted: { [key: string]: number } = {};
+          for (const [key, val] of Object.entries(safeThresholds)) {
+            shifted[key] = Math.max(0, Math.min(1000, val - totalBonus));
+          }
+          safeThresholds = shifted;
+        }
+
+        // Enforce realistic failure ranges based on difficulty
+        safeThresholds = this.enforceRealisticThresholds(safeThresholds, difficulty);
 
         const roll = Math.floor(Math.random() * 1001);
         const outcome = this.determineOutcome(roll, safeThresholds);
@@ -619,7 +675,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
 
       // We make a fresh call with the context combined, as we don't maintain a full chat history object here 
       // (The FS is the history source of truth).
-      responseText = await this.callAI(followUpPrompt);
+      responseText = await this.callAI(followUpPrompt, undefined);
       try {
         data = this.extractJSON(responseText);
       } catch (e) {
@@ -721,7 +777,81 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
     for (const [outcome, minVal] of sorted) {
       if (roll >= minVal) return outcome;
     }
+
+    // Below all thresholds: determine Critical Failure vs Failure
+    // Critical Failure on very low rolls (bottom 10% of the failure range)
+    const lowestThreshold = sorted.length > 0 ? sorted[sorted.length - 1][1] : 500;
+    const critFailCutoff = Math.floor(lowestThreshold * 0.10);
+    if (roll <= critFailCutoff && lowestThreshold >= 200) {
+      return "Critical Failure";
+    }
     return "Failure";
+  }
+
+  /**
+   * Returns default threshold values when the AI provides none,
+   * based on the action's difficulty tier.
+   */
+  private getDefaultThresholds(difficulty: string): { [key: string]: number } {
+    switch (difficulty) {
+      case 'trivial':
+        return { "Critical Success": 900, "Success": 150, "Partial Success": 75 };
+      case 'easy':
+        return { "Critical Success": 900, "Success": 300, "Partial Success": 150 };
+      case 'moderate':
+        return { "Critical Success": 850, "Success": 500, "Partial Success": 300 };
+      case 'hard':
+        return { "Critical Success": 950, "Success": 700, "Partial Success": 500 };
+      case 'very_hard':
+        return { "Critical Success": 975, "Success": 800, "Partial Success": 650 };
+      case 'near_impossible':
+        return { "Critical Success": 995, "Success": 900, "Partial Success": 800 };
+      default:
+        return { "Critical Success": 850, "Success": 500, "Partial Success": 300 };
+    }
+  }
+
+  /**
+   * Enforces realistic failure ranges on the AI-provided thresholds.
+   * The AI tends to set thresholds too low, making almost everything succeed.
+   * This applies minimum threshold floors based on difficulty so there's always
+   * a meaningful chance of failure for non-trivial tasks.
+   */
+  private enforceRealisticThresholds(
+    thresholds: { [key: string]: number },
+    difficulty: string
+  ): { [key: string]: number } {
+    // Minimum "Success" threshold floors per difficulty
+    // This ensures the failure range is at least this percentage
+    const minSuccessFloors: { [key: string]: number } = {
+      'trivial': 100,       // ~10% fail minimum
+      'easy': 200,          // ~20% fail minimum  
+      'moderate': 350,      // ~35% fail minimum
+      'hard': 500,          // ~50% fail minimum
+      'very_hard': 650,     // ~65% fail minimum
+      'near_impossible': 800 // ~80% fail minimum
+    };
+
+    const floor = minSuccessFloors[difficulty] ?? 350; // default to moderate
+
+    // Find the "Success" threshold (or closest equivalent)
+    const successKey = Object.keys(thresholds).find(k =>
+      k.toLowerCase().includes('success') && !k.toLowerCase().includes('critical') && !k.toLowerCase().includes('partial')
+    ) || 'Success';
+
+    const currentSuccess = thresholds[successKey];
+    if (currentSuccess !== undefined && currentSuccess < floor) {
+      // The AI set the threshold too low — raise it to the floor
+      const boost = floor - currentSuccess;
+      // Shift ALL thresholds up by the same amount to maintain relative spacing
+      const adjusted: { [key: string]: number } = {};
+      for (const [key, val] of Object.entries(thresholds)) {
+        adjusted[key] = Math.min(1000, val + boost);
+      }
+      return adjusted;
+    }
+
+    return thresholds;
   }
 
   private processResponseData(data: AIResponse) {
@@ -735,15 +865,260 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
           // Skip if content is identical to what's already stored
           const existing = this.fs.read(filename);
           if (existing === fileData) continue;
-          this.fs.write(filename, fileData);
+          if (filename === 'CurrentMap.json') {
+            this.writeMapSafe(fileData);
+          } else {
+            this.fs.write(filename, fileData);
+          }
         } else if (fileData && typeof fileData === 'object' && fileData.content) {
           const contentStr = typeof fileData.content === 'object' ? JSON.stringify(fileData.content) : fileData.content;
           // Skip if content is identical to what's already stored
           const existing = this.fs.read(filename);
           if (existing === contentStr) continue;
-          this.fs.write(filename, contentStr, fileData.displayName);
+          if (filename === 'CurrentMap.json') {
+            this.writeMapSafe(contentStr);
+          } else {
+            this.fs.write(filename, contentStr, fileData.displayName);
+          }
         }
       }
+    }
+  }
+
+  /**
+   * Safely writes CurrentMap.json by validating it is proper JSON first.
+   * If the new content is invalid, attempts repair. If repair fails,
+   * merges the old valid map data with any salvageable new data.
+   */
+  private writeMapSafe(content: string) {
+    // Try direct parse
+    try {
+      const parsed = JSON.parse(content);
+      const normalized = JSON.stringify(parsed);
+      this.fs.write('CurrentMap.json', normalized);
+      this.lastValidMap = normalized;
+      return;
+    } catch (e) {
+      // Content is invalid JSON, try to repair
+    }
+
+    // Attempt repair
+    const repaired = this.repairJSON(content);
+    if (repaired) {
+      try {
+        const parsed = JSON.parse(repaired);
+        const normalized = JSON.stringify(parsed);
+        this.fs.write('CurrentMap.json', normalized);
+        this.lastValidMap = normalized;
+        console.warn('CurrentMap.json required JSON repair — repaired successfully');
+        return;
+      } catch (e) {
+        // Repair wasn't enough
+      }
+    }
+
+    // If we have a last valid map, try to merge or just keep it
+    if (this.lastValidMap) {
+      console.warn('CurrentMap.json had malformed JSON — falling back to last valid map');
+      // Don't overwrite — the filesystem still has the last valid map
+      // (or we can re-write the backup to be safe)
+      this.fs.write('CurrentMap.json', this.lastValidMap);
+    } else {
+      // Last resort: try the sanitizeJSON path
+      try {
+        const sanitized = this.sanitizeJSON(content);
+        const parsed = JSON.parse(sanitized);
+        const normalized = JSON.stringify(parsed);
+        this.fs.write('CurrentMap.json', normalized);
+        this.lastValidMap = normalized;
+        console.warn('CurrentMap.json required sanitization — recovered');
+        return;
+      } catch (e) {
+        console.error('CurrentMap.json is completely unrecoverable — discarding corrupt update');
+        // Don't write anything — leave whatever was there before
+      }
+    }
+  }
+
+  /**
+   * Calculates a cumulative bonus for a check by scanning ALL files for modifiers.
+   * Modifiers can come from:
+   * 1. Character stats (formula parsing)
+   * 2. World rules (+X% to Stat)
+   * 3. Item bonuses
+   * 4. Active status effects
+   */
+  private calculateGlobalBonus(statName: string, username?: string): number {
+    const files = this.fs.getAll();
+    let totalBonus = 0;
+    const statLower = statName.toLowerCase();
+    
+    // 1. Identify active status effect IDs for this player
+    const activeEffectIds: string[] = [];
+    if (username) {
+      const charFile = this.fs.list().find(f => f.toLowerCase().includes(username.toLowerCase()) && f.endsWith('.txt'));
+      if (charFile) {
+        const content = files[charFile];
+        // Extract status patterns: [Status:Oil_Slick(Expires: ...)]
+        const statusMatches = content.matchAll(/\[Status:([\w-]+)/g);
+        for (const m of statusMatches) activeEffectIds.push(m[1].toLowerCase());
+      }
+    }
+
+    // 2. Scan all files for modifiers
+    for (const [filename, content] of Object.entries(files)) {
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const lLower = line.toLowerCase();
+        
+        // A. Direct stat formula in character sheet (e.g., "- Agility: base + 15%(1000) + suit_mob...")
+        // Handle optional bullet points/numbers at start
+        const statLineMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*(\w+)\s*[:=]\s*(.*)$/);
+        if (statLineMatch && statLineMatch[1] === statLower) {
+          totalBonus += this.parseFormula(line, files);
+          continue;
+        }
+
+        // B. Global stat modifiers (e.g., "+5% to Agility", "-10%(1000) for Strength")
+        // Pattern: [+-]Number[%][(1000)] [to|for|grant] [Stat]
+        const globalModRegex = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|grant|)\s*(\w+)/i;
+        const gm = line.match(globalModRegex);
+        if (gm && gm[2].toLowerCase() === statLower) {
+          totalBonus += this.parseValue(gm[1]);
+          continue;
+        }
+        
+        // C. Status effect specific modifiers
+        // If a line in WorldRules or elsewhere mentions an active status effect
+        for (const effectId of activeEffectIds) {
+          if (lLower.includes(effectId)) {
+            // Check for a modifier in this line
+            const modMatch = line.match(/([+-]\s*\d+%?)/);
+            if (modMatch) {
+              // Verify the modifier is for this specific stat
+              if (lLower.includes(statLower)) {
+                totalBonus += this.parseValue(modMatch[1]);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return totalBonus;
+  }
+
+  /**
+   * Parses complex formulae like "base + 15%(1000) + bonus_var"
+   */
+  private parseFormula(formulaLine: string, allFiles: { [name: string]: string }): number {
+    const rhs = formulaLine.split(/[:=]/)[1] || '';
+    const parts = rhs.split('+').map(p => p.trim());
+    let bonus = 0;
+
+    for (const part of parts) {
+      if (part.toLowerCase().includes('base')) continue;
+      
+      // Handle percentage of 1000: "15%(1000)"
+      const pctMatch = part.match(/(\d+)\s*%\s*\(\s*1000\s*\)/);
+      if (pctMatch) {
+        bonus += (parseInt(pctMatch[1]) / 100) * 1000;
+        continue;
+      }
+
+      // Handle raw numbers
+      if (/^[+-]?\s*\d+$/.test(part)) {
+        bonus += parseInt(part.replace(/\s+/g, ''));
+        continue;
+      }
+
+      // Handle variable references (e.g., "suit_mobility_bonus")
+      if (/^\w+$/.test(part)) {
+        bonus += this.resolveVariable(part, allFiles);
+      }
+    }
+
+    return bonus;
+  }
+
+  /**
+   * Searches ALL files for a variable definition like "suit_mobility_bonus: 50"
+   */
+  private resolveVariable(varName: string, allFiles: { [name: string]: string }): number {
+    const vLower = varName.toLowerCase();
+    for (const content of Object.values(allFiles)) {
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const lLower = line.toLowerCase();
+        // Handle optional bullet points/numbers at start
+        const varMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*(\w+)\s*[:=]\s*(.*)$/);
+        if (varMatch && varMatch[1] === vLower) {
+          return this.parseValue(varMatch[2]);
+        }
+      }
+    }
+    return 0;
+  }
+
+  /**
+   * Converts strings like "+5%", "10", "-15%(1000)" to numeric bonuses on a 0-1000 scale.
+   */
+  private parseValue(valStr: string): number {
+    const clean = valStr.replace(/\s+/g, '').toLowerCase();
+    if (clean.includes('%')) {
+      const numMatch = clean.match(/([+-]?\d+)/);
+      if (numMatch) {
+        const num = parseInt(numMatch[1]);
+        // Whether it's "15%" or "15%(1000)", it's the same math in our engine
+        return (num / 100) * 1000;
+      }
+    }
+    return parseInt(clean) || 0;
+  }
+  private repairJSON(raw: string): string | null {
+    try {
+      let s = raw.trim();
+
+      // Remove trailing commas before } or ] (common AI mistake)
+      s = s.replace(/,\s*([}\]])/g, '$1');
+
+      // Replace single-quoted strings with double-quoted
+      // Only do this outside of already double-quoted strings
+      s = s.replace(/'([^'\n]*?)'/g, (match, inner) => {
+        // Don't replace if it looks like it's inside a double-quoted string
+        return `"${inner.replace(/"/g, '\\"')}"`;
+      });
+
+      // Try to fix unquoted keys: word: -> "word":
+      s = s.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+
+      // Count brackets to detect truncation
+      let braceCount = 0;
+      let bracketCount = 0;
+      for (const ch of s) {
+        if (ch === '{') braceCount++;
+        else if (ch === '}') braceCount--;
+        else if (ch === '[') bracketCount++;
+        else if (ch === ']') bracketCount--;
+      }
+
+      // If brackets are unbalanced (truncated), try to close them
+      // But only if we're missing a small number of closing brackets
+      if (braceCount > 0 && braceCount <= 5) {
+        // Remove any trailing partial key-value (e.g., "key": or "key": "val)
+        s = s.replace(/,\s*"[^"]*"\s*:\s*(?:"[^"]*)?$/, '');
+        s = s.replace(/,\s*$/, '');
+        for (let i = 0; i < bracketCount; i++) s += ']';
+        for (let i = 0; i < braceCount; i++) s += '}';
+      } else if (bracketCount > 0 && bracketCount <= 5) {
+        s = s.replace(/,\s*$/, '');
+        for (let i = 0; i < bracketCount; i++) s += ']';
+        for (let i = 0; i < braceCount; i++) s += '}';
+      }
+
+      return s;
+    } catch (e) {
+      return null;
     }
   }
 
