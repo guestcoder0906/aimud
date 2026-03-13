@@ -68,8 +68,8 @@ PROBABILITY ENGINE RULE (CRITICAL):
   * Physical feats (Climbing, jumping, lifting, swimming)
   * Magic or Technical operations with risk
   * Resistance against effects or toxins
-- If an action should be modified by stats (e.g., Agility, Strength), you MUST define a "stat" field in the "checks" object that matches the exact stat name (e.g., "Agility", "Perception").
-- The backend engine will automatically calculate and apply all relevant mathematical modifiers from all active files (character stats, items, status effects, and world rules) based on this "stat" field.
+- If an action should be modified by stats (e.g., Agility, Strength), you MUST define a "stat" field in the "checks" object that matches the exact stat name.
+- THE ENGINE IS DYNAMIC (CRITICAL): The backend probability engine will automatically scan ALL world files, analyze your "description" and "stat" fields, and DYNAMICALLY select every relevant mathematical modifier (including items, world rules, and character formulae) that accurately applies to that specific action context.
 - If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
 
 THRESHOLD CALIBRATION (CRITICAL — READ CAREFULLY):
@@ -607,15 +607,22 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
       // Also process any file updates from Phase 1 so they aren't lost
       this.processResponseData(data);
 
-      const results = data.checks.map(check => {
+      // 0. Catalog all potential world rules/modifiers from all files
+      // we pass username to filter out OTHER players' character files
+      const ruleCatalog = this.catalogRules(username);
+
+      const results = await Promise.all(data.checks.map(async check => {
         // Normalize alternate AI check formats
-        // AI sometimes returns { check, stat, threshold, modifier } instead of { name, thresholds }
         const safeName = check.name || check.check || check.stat || 'Action Check';
         const safeDesc = check.description || `Probability roll for ${safeName}`;
         const difficulty = check.difficulty || 'moderate';
 
-        // Compute cumulative global bonus from all files (stats, items, rules, effects)
-        const bonusResult = this.calculateGlobalBonus(check.stat || safeName, username);
+        // 1. DYNAMICALLY SELECT RELEVANT RULES USING AI
+        // We pass the catalog and username to the AI for contextual selection
+        const selectedRules = await this.selectRelevantRules(safeDesc, ruleCatalog, username);
+        
+        // 2. CALCULATE BONUS FROM SELECTED RULES
+        const bonusResult = this.calculateBonusFromRules(selectedRules, username);
         const globalBonus = bonusResult.total;
         
         // Apply manual modifier if present, added to the global bonus
@@ -667,9 +674,10 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
           outcome: outcome,
           roll: roll,
           thresholds: safeThresholds,
-          math: mathBreakdown
+          math: mathBreakdown,
+          rules: selectedRules
         };
-      });
+      }));
 
       const resultReport = results.map(r =>
         `Check: ${r.name}\nReason: ${r.description}\nRoll: ${r.roll} / 1000\nMath: ${r.math}\nThresholds: ${JSON.stringify(r.thresholds)}\nRESULT: ${r.outcome}`
@@ -957,85 +965,207 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
    * 3. Item bonuses
    * 4. Active status effects
    */
-  private calculateGlobalBonus(statName: string, username?: string): { total: number, breakdown: string } {
+  /**
+   * Scans all files and extracts lines that appear to be mathematical rules, stats, or modifiers.
+   * If a username is provided, it excludes character files of other players.
+   */
+  private catalogRules(username?: string): string[] {
+    const files = this.fs.getAll();
+    const catalogSet = new Set<string>();
+    const uLower = username?.toLowerCase();
+
+    for (const [filename, content] of Object.entries(files)) {
+      // Multiplayer protection: Ignore other players' character files
+      // Character files are "Name-Username.txt"
+      if (uLower && filename.endsWith('.txt') && filename.includes('-')) {
+        const parts = filename.split('-');
+        const fileUsername = parts[parts.length - 1].replace('.txt', '').toLowerCase();
+        if (fileUsername !== uLower && this.isKnownPlayer(fileUsername)) {
+          // This is another player's file, skip it
+          continue;
+        }
+      }
+
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        // Skip empty or purely narrative lines
+        if (!trimmed || trimmed.length < 5) continue;
+
+        // Pattern-based extraction:
+        // - Key: Value
+        // - [+-]X% to [Stat]
+        // - [Stat]: base + ...
+        // - Status: [ID]
+        const isStat = /^(?:[\s\-*>]|\d+\.)*\s*\w+\s*[:=]\s*(.*)$/.test(trimmed);
+        const isMod = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|grant|)\s*(\w+)/i.test(trimmed);
+        const isEffect = /\[Status:([\w-]+)/i.test(trimmed);
+
+        if (isStat || isMod || isEffect) {
+          catalogSet.add(`[File: ${filename}] ${trimmed}`);
+        }
+      }
+    }
+    return Array.from(catalogSet);
+  }
+
+  /**
+   * Uses AI to dynamically select which rules from the catalog actually apply to the given action.
+   */
+  private async selectRelevantRules(actionDesc: string, catalog: string[], username?: string): Promise<string[]> {
+    if (catalog.length === 0) return [];
+
+    const selectionPrompt = `TASK: Select all RELEVANT world rules, character stats, and item modifiers for the action: "${actionDesc}".
+    ${username ? `ACTOR: The player performing this action is "${username}".` : ''}
+    
+Rules Catalog:
+${catalog.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+INSTRUCTIONS:
+- Identify rules that mathematically should affect the outcome of this specific action.
+- Only select rules belonging to the ACTOR or general World/Item rules.
+- Examples: 
+  * "Stabbing" -> Apply Strength, Weapon sharp bonuses, etc.
+  * "Sneaking" -> Apply Agility, Stealth bonuses, Boots effects, etc.
+  * "Climbing" -> Apply Strength/Agility, Grip bonuses, Weather effects.
+- Return ONLY a JSON array of the Rule Text strings (exactly as they appear in the catalog) that apply.
+- If NO rules apply, return [].
+- Return ONLY the JSON array.`;
+
+    try {
+      const response = await this.callAI(selectionPrompt);
+      // Clean up markdown code blocks if any
+      const cleaned = response.replace(/```json/g, '').replace(/```/g, '').trim();
+      const selected = JSON.parse(cleaned);
+      if (Array.isArray(selected)) {
+        // Map back to the original rule text, ignoring the "[File: ...]" prefix for the search if needed
+        // but the prompt asked for the exact text, so it should work.
+        return selected.map(s => {
+          // AI might return just the rule part or include the prefix. 
+          // We'll normalize by finding the best match in the catalog.
+          const match = catalog.find(c => c.includes(s) || s.includes(c));
+          return match || s;
+        });
+      }
+    } catch (e) {
+      console.warn("AI rule selection failed, falling back to empty rules.", e);
+    }
+    return [];
+  }
+
+  /**
+   * Calculates numeric bonus from a specific set of AI-selected rule strings.
+   */
+  private calculateBonusFromRules(selectedRules: string[], username?: string): { total: number, breakdown: string } {
     const files = this.fs.getAll();
     let totalBonus = 0;
     const breakdownParts: string[] = [];
-    const statLower = statName.toLowerCase();
+    const resolvedVarsInFormulas = new Set<string>();
+
+    // Identify player's char file for variable priority
+    const charFile = username ? this.fs.list().find(f => f.toLowerCase().includes(username.toLowerCase()) && f.endsWith('.txt')) : undefined;
+
+    // We process global modifiers first, as they are often more specific "overrides" or "buffs"
+    // and might help us decide which secondary stats are relevant.
     
-    // 1. Identify active status effect IDs for this player
-    const activeEffectIds: string[] = [];
-    if (username) {
-      const charFile = this.fs.list().find(f => f.toLowerCase().includes(username.toLowerCase()) && f.endsWith('.txt'));
-      if (charFile) {
-        const content = files[charFile];
-        // Extract status patterns: [Status:Oil_Slick(Expires: ...)]
-        const statusMatches = content.matchAll(/\[Status:([\w-]+)/g);
-        for (const m of statusMatches) activeEffectIds.push(m[1].toLowerCase());
+    const handledRuleIndexes = new Set<number>();
+
+    // 1. Process Complex Formulas FIRST (Stat Definitions)
+    for (let i = 0; i < selectedRules.length; i++) {
+      const rulePrefixed = selectedRules[i];
+      // Extract file origin: "[File: filename.txt] ..."
+      const fileMatch = rulePrefixed.match(/^\[File: (.*?)\]/);
+      const originFile = fileMatch ? fileMatch[1] : undefined;
+      
+      const rule = rulePrefixed.replace(/^\[File: .*?\] /, '');
+      const lLower = rule.toLowerCase();
+
+      // A. Direct stat/action formula (e.g., "Agility: base + 15%(1000) + ...")
+      // We look for a key-value pattern where the RHS looks like a formula (not just a single modifier)
+      const statLineMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*([\w ]+)\s*[:=]\s*(.*)$/);
+      if (statLineMatch) {
+        const statName = statLineMatch[1].trim();
+        const rhs = statLineMatch[2].trim();
+        
+        // A "formula" must have 'base', a '+' not at the start, or at least two non-empty terms
+        const terms = rhs.split('+').filter(t => t.trim().length > 0);
+        const isTrueFormula = rhs.includes('base') || (terms.length > 1) || (rhs.indexOf('+') > 0);
+        
+        if (isTrueFormula) {
+          // Multi-player Priority: When parsing a formula, we look for variables in:
+          // 1. The origin file (where the formula was defined)
+          // 2. The player's character file
+          const preferredFiles = [originFile, charFile].filter((f): f is string => !!f);
+          const formulaBonus = this.parseFormula(rule, files, preferredFiles);
+          totalBonus += formulaBonus;
+          if (formulaBonus !== 0) {
+            breakdownParts.push(`${statName}(Base): ${formulaBonus > 0 ? '+' : ''}${formulaBonus}`);
+          }
+          
+          handledRuleIndexes.add(i);
+
+          // Track which variables were used in this formula to skip them later
+          const parts = rhs.split('+').map(p => p.trim().toLowerCase());
+          for (const p of parts) {
+            if (/^\w+$/.test(p) && p !== 'base') resolvedVarsInFormulas.add(p);
+          }
+        }
       }
     }
 
-    // 2. Scan all files for modifiers
-    for (const [filename, content] of Object.entries(files)) {
-      const lines = content.split('\n');
-      for (const line of lines) {
-        const lLower = line.toLowerCase();
-        
-        // A. Direct stat formula in character sheet (e.g., "- Agility: base + 15%(1000) + suit_mob...")
-        // Handle optional bullet points/numbers at start
-        const statLineMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*(\w+)\s*[:=]\s*(.*)$/);
-        if (statLineMatch && statLineMatch[1] === statLower) {
-          const formulaBonus = this.parseFormula(line, files);
-          totalBonus += formulaBonus;
-          if (formulaBonus !== 0) {
-            breakdownParts.push(`${statName}_Base: ${formulaBonus > 0 ? '+' : ''}${formulaBonus}`);
-          }
-          continue;
-        }
+    // 2. Process Global Modifiers and Secondary Variables
+    for (let i = 0; i < selectedRules.length; i++) {
+      if (handledRuleIndexes.has(i)) continue;
 
-        // B. Global stat modifiers (e.g., "+5% to Agility", "-10%(1000) for Strength")
-        // Pattern: [+-]Number[%][(1000)] [to|for|grant] [Stat]
-        const globalModRegex = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|grant|)\s*(\w+)/i;
-        const gm = line.match(globalModRegex);
-        if (gm && gm[2].toLowerCase() === statLower) {
-          const val = this.parseValue(gm[1]);
+      const rulePrefixed = selectedRules[i];
+      const rule = rulePrefixed.replace(/^\[File: .*?\] /, '');
+      const lLower = rule.toLowerCase();
+      
+      const globalModRegex = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|on|grant|toward|)\s*([\w ]+)/i;
+      const gm = rule.match(globalModRegex);
+      if (gm) {
+        const val = this.parseValue(gm[1]);
+        if (val !== 0) {
           totalBonus += val;
-          if (val !== 0) {
-            // Include source if possible (filename)
-            const source = filename.replace('.txt', '');
-            breakdownParts.push(`${source}: ${val > 0 ? '+' : ''}${val}`);
-          }
-          continue;
+          let label = rule.split(':')[0]?.trim();
+          if (!label || label.toLowerCase() === lLower) label = gm[2].trim();
+          breakdownParts.push(`${label}: ${val > 0 ? '+' : ''}${val}`);
         }
-        
-        // C. Status effect specific modifiers
-        // If a line in WorldRules or elsewhere mentions an active status effect
-        for (const effectId of activeEffectIds) {
-          if (lLower.includes(effectId)) {
-            // Check for a modifier in this line
-            const modMatch = line.match(/([+-]\s*\d+%?)/);
-            if (modMatch) {
-              // Verify the modifier is for this specific stat
-              if (lLower.includes(statLower)) {
-                const val = this.parseValue(modMatch[1]);
-                totalBonus += val;
-                if (val !== 0) {
-                  breakdownParts.push(`${effectId}: ${val > 0 ? '+' : ''}${val}`);
-                }
-              }
-            }
-          }
-        }
+        continue;
       }
+
+      // C. Simple variables (e.g., "training: 15")
+      const varMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*([\w ]+)\s*[:=]\s*([+-]?\d+)$/);
+      if (varMatch) {
+        const varName = varMatch[1].trim();
+        if (resolvedVarsInFormulas.has(varName)) continue; // Skip double-counting
+        
+        const val = this.parseValue(varMatch[2]);
+        if (val !== 0) {
+          totalBonus += val;
+          breakdownParts.push(`${varName}: ${val > 0 ? '+' : ''}${val}`);
+        }
+        continue;
+      }
+      
+      console.log(`DEBUG: Rule unhandled: "${rule}"`);
     }
 
     return { total: totalBonus, breakdown: breakdownParts.join(' + ').replace(/\+ -/g, '- ') };
   }
 
+
+  /**
+   * Helper to check if a username belongs to a player (has a character file)
+   */
+  private isKnownPlayer(username: string): boolean {
+    return this.fs.list().some(f => f.toLowerCase().includes(username.toLowerCase()) && f.endsWith('.txt'));
+  }
+
   /**
    * Parses complex formulae like "base + 15%(1000) + bonus_var"
    */
-  private parseFormula(formulaLine: string, allFiles: { [name: string]: string }): number {
+  private parseFormula(formulaLine: string, allFiles: { [name: string]: string }, preferredFiles?: string[]): number {
     const rhs = formulaLine.split(/[:=]/)[1] || '';
     const parts = rhs.split('+').map(p => p.trim());
     let bonus = 0;
@@ -1058,7 +1188,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
 
       // Handle variable references (e.g., "suit_mobility_bonus")
       if (/^\w+$/.test(part)) {
-        bonus += this.resolveVariable(part, allFiles);
+        bonus += this.resolveVariable(part, allFiles, preferredFiles);
       }
     }
 
@@ -1066,22 +1196,41 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
   }
 
   /**
-   * Searches ALL files for a variable definition like "suit_mobility_bonus: 50"
+   * Searches files for a variable definition like "suit_mobility_bonus: 50"
+   * Prioritizes preferred files if provided (Multiplayer support).
    */
-  private resolveVariable(varName: string, allFiles: { [name: string]: string }): number {
+  private resolveVariable(varName: string, allFiles: { [name: string]: string }, preferredFiles?: string[]): number {
     const vLower = varName.toLowerCase();
-    for (const content of Object.values(allFiles)) {
-      const lines = content.split('\n');
-      for (const line of lines) {
-        const lLower = line.toLowerCase();
-        // Handle optional bullet points/numbers at start
-        const varMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*(\w+)\s*[:=]\s*(.*)$/);
-        if (varMatch && varMatch[1] === vLower) {
-          return this.parseValue(varMatch[2]);
+
+    // 1. Check preferred files first (e.g. Origin of formula or Actor character file)
+    if (preferredFiles) {
+      for (const f of preferredFiles) {
+        const content = allFiles[f];
+        if (content) {
+          const val = this.findVarInContent(vLower, content);
+          if (val !== null) return val;
         }
       }
     }
+
+    // 2. Fallback to global search
+    for (const content of Object.values(allFiles)) {
+      const val = this.findVarInContent(vLower, content);
+      if (val !== null) return val;
+    }
     return 0;
+  }
+
+  private findVarInContent(varName: string, content: string): number | null {
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const lLower = line.toLowerCase();
+      const varMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*(\w+)\s*[:=]\s*(.*)$/);
+      if (varMatch && varMatch[1] === varName) {
+        return this.parseValue(varMatch[2]);
+      }
+    }
+    return null;
   }
 
   /**

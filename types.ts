@@ -27,6 +27,8 @@ export interface CheckDef {
   description?: string;
   difficulty?: 'trivial' | 'easy' | 'moderate' | 'hard' | 'very_hard' | 'near_impossible';
   thresholds?: { [outcome: string]: number };
+  // AI-selected rules for dynamic modifier calculation
+  rules?: string[];
   // Alternate AI format fields
   check?: string;
   stat?: string;
