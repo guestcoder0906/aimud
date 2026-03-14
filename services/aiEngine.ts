@@ -3,9 +3,9 @@ import { FileSystem } from "./fileSystem";
 import { AIResponse, CheckDef } from "../types";
 
 interface DetectedModifier {
-  label: string; 
-  math: string; 
-  origin_file: string; 
+  label: string;
+  math: string;
+  origin_file: string;
   reasoning: string;
 }
 
@@ -40,6 +40,11 @@ FILE MINIMIZATION:
 - Only include files that are NEW, MODIFIED, or DELETED.
 - DO NOT re-include unchanged files.
 
+MAP DATA INTEGRITY (CRITICAL):
+- You MUST include "CurrentMap.json" in your "files" object if any entity moves, a location is created, or an object's state changes.
+- Never delete the map. If you forget to include it, the game world becomes spatially corrupted.
+- The map is the ONLY master record of coordinates.
+
 JSON RESPONSE FORMAT:
 {
   "narrative": "Text for the player...",
@@ -62,8 +67,8 @@ JSON RESPONSE FORMAT:
 13. Use hide[text/json/secret] syntax for information not yet revealed to player
 14. Use target(Player1, Player2)[Secret message] syntax for private narrative or NPC dialogue meant only for specific players. Both hide[] and target() can be used on EXACT file names (e.g. "target(Bob)[Secret Note].txt") OR inside the file content OR in the narrative response.
 15. Update files dynamically and accurately
-16. NEVER forget to create/update files for NPCs, items, locations, or any entities.
-17. KNOWN INVENTORY & EQUIPMENT (CRITICAL): If an item is a general/standard world item (e.g. "Dagger", "IronSword"), create a SEPARATE global file for it so others (NPCs/players) can use it. If an item is UNIQUE or CUSTOM to a specific entity (e.g. "MakeshiftGauntlet", "Bob'sRustyKey"), do NOT create a separate file; instead, define its full technical stats (weight, damage, properties) directly within that entity's character file under the [INVENTORY & EQUIPMENT] section for efficiency. A player should always know the technical details of the gear they are carrying.
+16. NEVER forget to create/update files for NPCs, weapons, attacks, items, locations, or any entities. Items and Attacks MUST NOT be vague; they MUST contain technical rules from the relevant schemas.
+17. KNOWN INVENTORY & EQUIPMENT (CRITICAL): If an item is a general/standard world item (e.g. "Dagger"), create a SEPARATE global technical file for it. If an item is UNIQUE or CUSTOM to a specific entity (e.g. "MakeshiftGauntlet"), define its full TECHNICAL RULES (damage, stamina cost, modifiers) directly within that entity's character file under [INVENTORY & EQUIPMENT]. Vague items are a failure.
 18. The game starts by generating the world. THEN, players will provide character descriptions. You MUST create their character files using EXACTLY this name format: "CharacterName-USERNAME.txt" (e.g., if USERNAME is Bob and his character is an elf named Legolas, the file MUST be "Legolas-Bob.txt").
 
 STAT PERSISTENCE RULE (CRITICAL):
@@ -86,6 +91,11 @@ All character/NPC/Entity files MUST follow this structured format for consistenc
 - Primary Attributes: (Use the probability engine modifier format: "stat: base probability engine + X%(1000) + effects")
 - Armor: (Threshold format: "armor: material base X (immunities/resistances)")
 
+[ATTACKS & COMBAT ACTIONS]
+- List every physical attack or standard action this entity can perform.
+- Format: "AttackName: Damage X-Y. Stamina Cost: Z. Accuracy: stat + modifiers. Special: (Effects)".
+- Example: "Bite: Damage 10-15. Stamina Cost: 5. Accuracy: dexterity + 5%(1000). Special: Chance to bleed."
+
 [ABILITIES & MAGIC]
 - List EVERY ability, spell, or special power this specific entity has.
 - Each ability MUST include: Name, Energy/Mana Cost, Range, Duration, Cooldown, Weight/Size Limit, Elemental Type, Focus/Channeling Requirement, and explicit Limitations.
@@ -100,6 +110,27 @@ All character/NPC/Entity files MUST follow this structured format for consistenc
 [STATUS EFFECTS & LORE]
 - Effects: (List with expiration timestamps: [Status:Type_ID(Expires: TIMESTAMP)])
 - Background/Biometrics: (Deep lore, unique traits)
+---
+
+ITEM & WEAPON TECHNICAL SCHEMA:
+All weapons and tools MUST include exhaustive technical rules and mathematical modifiers. 
+Every weapon file (global or unique) MUST follow this template:
+[IDENTIFICATION]
+- Name: ...
+- Category: (e.g., Heavy Slashing, Light Piercing, Tool, etc.)
+- Material: (e.g., High-Carbon Steel, Iron)
+
+[TECHNICAL RULES]
+- Damage Type: (e.g., Slashing, Impact, Thermal)
+- Damage Range: (e.g., 15-25 points)
+- Stamina/Energy Cost: (Cost to swing/fire)
+- Speed/Rate: (e.g., 1.2s per swing)
+- Range/Reach: (e.g., 2.5m)
+- Durability/Status: (Current / Max)
+- Modifiers: (Explicit probability engine bonuses: "accuracy: +5%(1000)", "parry: +10%(1000)")
+
+[SPECIAL PROPERTIES & LIMITATIONS]
+- List unique effects and physical limitations.
 ---
 
 GROUP ENTITY RULE:
@@ -344,7 +375,7 @@ export class AIEngine {
 
           const spatialContext = this.buildSpatialContext(username);
           const userHeader = username ? `[Player: ${username}]\n` : '';
-          
+
           // Check if player already has a character file to avoid duplication
           const characterFiles = Object.keys(this.fs.getAll()).filter(f => {
             const lower = f.toLowerCase();
@@ -355,9 +386,9 @@ export class AIEngine {
           const prompt = `Current Files Context:\n${worldContext}\n\n${spatialContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
 
 CRITICAL REMINDERS:
-1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction.
+1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction. If you fail to update the map coordinates when the player moves, the state becomes corrupted. NEVER omit the map from your "files" object.
 2. WORLD GENERATION: If the player enters a new area or asks about something not yet defined, you MUST create the necessary Location, NPC, or Item files immediately.
-3. KNOWN GEAR: If the player has standard items (Dagger, Potion), ensure they have global files. If the items are UNIQUE/CUSTOM, define their stats directly in the character sheet. If data is missing or not in a file yet, create it NOW.
+3. WEAPON AUDIT: Every weapon or tool mentioned MUST have technical rules (Damage, Stats, Stamina Cost). If missing from global files or the character sheet, add them NOW.
 4. PERCEPTION AUDIT (CRITICAL): If your narrative mentions an NPC, item, or location that does not have a technical file in the "Current Files Context" above, you MUST create that file NOW. Never mention something without providing its technical definition.
 5. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
 6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
@@ -366,7 +397,8 @@ CRITICAL REMINDERS:
 9. TIME IS NOT A MODIFIER: Never include time costs (e.g. +30s) in your "checks" modifiers. Time is for duration only.
 10. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
 11. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
-${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+12. MAP PRECISION: Ensure the map reflects all permanent changes. If a wall is destroyed or a chest is opened, reflect this in the area/object status. Your CurrentMap.json MUST be valid, parsable JSON.
+${mapScreenshot ? '13. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
@@ -427,13 +459,13 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
         const mapData = JSON.parse(mapRaw);
         const players = mapData.players || [];
         const areas = mapData.areas || [];
-        
+
         // Find current player's location
         const player = players.find((p: any) => p.username?.toLowerCase() === username?.toLowerCase());
         if (player) {
           const px = player.x, py = player.y;
           const range = 100; // Search radius
-          
+
           for (const area of areas) {
             const dist = Math.sqrt((area.x - px) ** 2 + (area.y - py) ** 2);
             if (dist < range) {
@@ -446,7 +478,7 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 5. Action Keyword Matching (Broad context sweep)
@@ -547,7 +579,7 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
         if (char === '}') delta--;
       }
       while (delta > 0) { s += '}'; delta--; }
-      
+
       return s;
     } catch (e) {
       return null;
@@ -631,7 +663,7 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
             // Estimate time from WorldTime diff, or use a reasonable default
             const timeCost = this.estimateTimeCost() || 6;
             const maxMove = moveSpeed * timeCost;
-            
+
             // Stop at interaction range
             const moveDistance = Math.min(maxMove, Math.max(0, closestDist - (interactionRange * 0.8)));
 
@@ -677,7 +709,7 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
       // Look for range patterns in the character file or equipped items
       const rangeMatch = content.match(/(?:range|reach|distance)[:\s]*(\d+\.?\d*)\s*m/i);
       if (rangeMatch) return parseFloat(rangeMatch[1]);
-      
+
       // Fallback for melee weapon detection
       if (content.toLowerCase().includes('sword') || content.toLowerCase().includes('axe') || content.toLowerCase().includes('club')) {
         return 2;
@@ -760,22 +792,22 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
         // 1. DYNAMICALLY DETECT MODIFIERS USING AI
         // The AI analyzes the raw context and identifies structured modifier rules.
         const detectedMods = await this.detectRelevantModifiers(safeDesc, worldState, username);
-        
+
         // 2. CALCULATE BONUS FROM DETECTED MODS (System Math)
         const bonusResult = this.calculateBonusFromAI(detectedMods, username);
         const globalBonus = bonusResult.total;
-        
+
         // Apply manual modifier if present, added to the global bonus
         const manualMod = check.modifier || 0;
         const totalBonus = globalBonus + manualMod;
-        
+
         // Build math breakdown string
         let mathBreakdown = bonusResult.breakdown;
         if (manualMod !== 0) {
           mathBreakdown += (mathBreakdown ? ' + ' : '') + `AI_Modifier: ${manualMod > 0 ? '+' : ''}${manualMod}`;
         }
         if (!mathBreakdown) mathBreakdown = 'No modifiers found';
-        
+
         let safeThresholds: { [key: string]: number };
         if (check.thresholds && typeof check.thresholds === 'object') {
           safeThresholds = { ...check.thresholds };
@@ -937,7 +969,7 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
 
     // Below all thresholds: determine Critical Failure vs Failure
     const lowestThreshold = sorted.length > 0 ? sorted[sorted.length - 1][1] : 500;
-    
+
     // Check if the AI explicitly provided a "Failure" tier
     // If it did, and we are below all thresholds (including Failure), then it's a Critical Failure
     const hasExplicitFailure = Object.keys(thresholds).some(k => k.toLowerCase() === 'failure');
@@ -980,7 +1012,7 @@ ${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to ve
     };
     const minFloor = minFloors[difficulty] ?? 50;
     const fumbleFloor = absoluteFumbleFloors[difficulty] ?? 30;
-    
+
     // Outcome determination
     if (roll <= fumbleFloor || roll <= Math.max(minFloor, critFailCutoff)) {
       return "Critical Failure";
@@ -1231,7 +1263,7 @@ INSTRUCTIONS:
     const resolvedVarsInFormulas = new Set<string>();
 
     const charFile = username ? this.fs.list().find(f => f.toLowerCase().includes(username.toLowerCase()) && f.endsWith('.txt')) : undefined;
-    
+
     // Sort to process formulas (which define base stats) before modifiers that might add to them
     const sorted = [...detected].sort((a, b) => {
       const aIsFormula = a.math.includes('base') || a.math.includes('+') || a.math.includes('%');
@@ -1243,10 +1275,10 @@ INSTRUCTIONS:
 
     for (const mod of sorted) {
       const rhs = mod.math.trim();
-      
+
       // Determine if it's a complex formula (system math required)
       const isFormula = rhs.includes('base') || (rhs.split('+').length > 1);
-      
+
       if (isFormula) {
         const preferredFiles = [mod.origin_file, charFile].filter((f): f is string => !!f);
         const formulaBonus = this.executeMath(rhs, files, preferredFiles);
@@ -1254,7 +1286,7 @@ INSTRUCTIONS:
           totalBonus += formulaBonus;
           breakdownParts.push(`${mod.label}: ${formulaBonus > 0 ? '+' : ''}${formulaBonus}`);
         }
-        
+
         // Track variables consumed by this formula to avoid double counting
         const parts = rhs.split('+').map(p => p.trim().toLowerCase());
         for (const p of parts) {
@@ -1310,7 +1342,7 @@ INSTRUCTIONS:
 
     for (const part of parts) {
       if (part.toLowerCase().includes('base')) continue;
-      
+
       // Handle percentage of 1000: "15%(1000)" or just "15%"
       const pctMatch = part.match(/([+-]?\d+)\s*%\s*(\(\s*1000\s*\))?/);
       if (pctMatch) {
@@ -1386,7 +1418,7 @@ INSTRUCTIONS:
    */
   private parseValue(valStr: string): number {
     const clean = valStr.replace(/\s+/g, '').toLowerCase();
-    
+
     // Ignore time-based values (+10s, 30sec, 1m) to prevent leaks into math engine
     if (clean.match(/[+-]?\d+(s|sec|seconds|m|min|minutes|h|hr|hours)$/)) {
       return 0;
