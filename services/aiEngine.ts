@@ -307,9 +307,7 @@ export class AIEngine {
     return new Promise((resolve) => {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
-          const charRequirement = username
-            ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
-            : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
+          const charRequirement = "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
           const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".\nCRITICAL: Any magic, abilities, or spells MUST be highly specific with strict limits, energy costs, ranges, and target caps. Vague "magic" is completely unacceptable.`;
           const res = await this.handleRequest(prompt, undefined, username);
@@ -336,7 +334,11 @@ export class AIEngine {
           const oldMapRaw = this.fs.read('CurrentMap.json');
 
           const userHeader = username ? `[Player: ${username}]\n` : '';
-          const prompt = `Current Files Context:\n${worldContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.`;
+          
+          // ADDED CRITICAL PROMPT GUARD FOR DUPLICATE FILES
+          const charFileGuard = username ? `\n\nCRITICAL: Check your context. If a character file for player "${username}" (ending in "-${username}.txt") ALREADY EXISTS, you MUST update that specific file and NOT create a new one. Do not create duplicates.` : '';
+
+          const prompt = `Current Files Context:\n${worldContext}\n\n${userHeader}Player action: ${action}${charFileGuard}\n\nProcess this action.`;
 
           const res = await this.handleRequest(prompt, undefined, username, 'gemini-3.1-flash-lite-preview');
 
@@ -370,14 +372,21 @@ export class AIEngine {
       if (all[f]) relevant[f] = all[f];
     }
 
-    // 2. Active Player File
+    // 2. Active Player File (Robust Search)
     if (username) {
       const uLower = username.toLowerCase();
-      const playerFile = Object.keys(all).find(f => {
+      // Find ALL files that seem to belong to this user to prevent duplicates
+      const playerFiles = Object.keys(all).filter(f => {
         const lower = f.toLowerCase();
-        return lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`);
+        return lower.endsWith('.txt') && (
+          lower.includes(`-${uLower}`) || 
+          lower.includes(`_${uLower}`) || 
+          lower.includes(`${uLower}.txt`)
+        );
       });
-      if (playerFile) relevant[playerFile] = all[playerFile];
+      for (const pf of playerFiles) {
+        relevant[pf] = all[pf];
+      }
     }
 
     // 3. Spatially Relevant Files
