@@ -335,6 +335,7 @@ export class AIEngine {
           // Capture old map state for post-processing
           const oldMapRaw = this.fs.read('CurrentMap.json');
 
+          const spatialContext = this.buildSpatialContext(username);
           const userHeader = username ? `[Player: ${username}]\n` : '';
           
           // Check if player already has a character file to avoid duplication
@@ -344,14 +345,17 @@ export class AIEngine {
             return uLower && (lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`));
           });
 
-          const prompt = `Current Files Context:\n${worldContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
+          const prompt = `Current Files Context:\n${worldContext}\n\n${spatialContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
 
 CRITICAL REMINDERS:
-1. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `The player ALREADY has character file(s): ${characterFiles.join(', ')}. Use the existing one. DO NOT create a new one.` : `The player has NO character file. You MUST create one using EXACTLY the format "CharacterName-${username}.txt".`}
-2. FILE UPDATES: If stats like Health or Energy change, you MUST include the updated character file in your 'files' response.
-3. SEMANTICS: Only include files in 'files' if they have actually changed.`;
+1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction.
+2. WORLD GENERATION: If the player enters a new area or asks about something not yet defined, you MUST create the necessary Location, NPC, or Item files immediately.
+3. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
+4. FILE UPDATES: Include modified files in your 'files' JSON. Update HP/Energy in the character file if they change.
+5. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
+${mapScreenshot ? '6. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
-          const res = await this.handleRequest(prompt, undefined, username, 'gemini-3.1-flash-lite-preview');
+          const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
           // Post-process: enforce spatial consistency on the returned map
           // Use oldMapRaw if it was valid, otherwise fall back to lastValidMap
@@ -436,6 +440,66 @@ CRITICAL REMINDERS:
 
     return relevant;
   }
+
+  /**
+   * Generates a text summary of the current map state for the AI.
+   */
+  private buildSpatialContext(username?: string): string {
+    const mapRaw = this.fs.read('CurrentMap.json');
+    if (!mapRaw) return '';
+
+    try {
+      const map = JSON.parse(mapRaw);
+      const pages = map.pages || (map.areas ? [map] : []);
+      const lines: string[] = ['[SPATIAL CONTEXT]'];
+
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        const pageLabel = page.name || `Page ${i + 1}`;
+        const players = page.players || [];
+        const areas = page.areas || [];
+
+        const player = players.find((p: any) => p.username?.toLowerCase() === username?.toLowerCase());
+        if (player) {
+          const px = Number(player.x) || 0;
+          const py = Number(player.y) || 0;
+          const distLines: string[] = [];
+
+          for (const area of areas) {
+            const ax = Number(area.x) || 0;
+            const ay = Number(area.y) || 0;
+            const aw = Number(area.width) || 0;
+            const ah = Number(area.height) || 0;
+            const cx = area.shape === 'circle' ? ax : ax + aw / 2;
+            const cy = area.shape === 'circle' ? ay : ay + ah / 2;
+            const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+            distLines.push(`  → ${area.type || 'Object'}: ${area.name} (${area.description || ''}) is ${dist.toFixed(1)}m away [at (${cx.toFixed(1)}, ${cy.toFixed(1)})]`);
+          }
+
+          for (const other of players) {
+            if (other.username === username) continue;
+            const ox = Number(other.x) || 0;
+            const oy = Number(other.y) || 0;
+            const dist = Math.sqrt((px - ox) ** 2 + (py - oy) ** 2);
+            distLines.push(`  → Player ${other.username}: ${dist.toFixed(1)}m [at (${ox.toFixed(1)}, ${oy.toFixed(1)})]`);
+          }
+
+          lines.push(`${pageLabel} at (${px.toFixed(1)}, ${py.toFixed(1)}), facing ${player.facing || 0}°:`);
+          lines.push(...distLines);
+        }
+
+        if (page.scale) {
+          lines.push(`Map scale: ${page.scale}`);
+        }
+      }
+
+      return lines.join('\n');
+    } catch (e) {
+      console.error('Failed to build spatial context', e);
+      return '';
+    }
+  }
+
   /**
    * Safe JSON repair for common AI mistakes
    */
