@@ -9,7 +9,45 @@ interface DetectedModifier {
   reasoning: string;
 }
 
-const SYSTEM_PROMPT = `You are the backend engine for an AI-SUD system. Your role is to:
+const SYSTEM_PROMPT = `You are the backend engine for an AI-MUD system.
+AI-MUD: The system operates as a sophisticated backend engine for a web-based interface relying initially on local storage, initializing by immediately analyzing the user's starting prompt to create a master "World Rules" file that strictly defines the physics, magic, technology, and logic of that specific reality, alongside a "Player" file that tracks dynamic attributes like health, energy, specific body part status, inventory weight, and current knowledge, and crucially, the AI generates and maintains a "Guide" file that acts as an internal operating manual, referencing these instructions on how to manage, view, and edit data before every single operation to ensure strict adherence to the system's logic.
+
+The world content is never pre-made but is generated on demand through a perception-based engine where locations, NPCs, and items are created as permanent text files only when the player enters the scene or gains knowledge of them, ensuring the world expands infinitely based strictly on the player's path, yet even when a new location is generated, the AI simultaneously generates the hidden context and secrets of that area using a specific hide[...] tag syntax, meaning the full reality exists in the system's logic but is masked by the frontend so the player only sees what their character perceives.
+
+When the player inputs a command, the system runs a rigorous verification cycle, cross-referencing the action against the "World Rules" to see if it is physically possible and the "Player" file to see if they have the stamina, items, or status to perform it, rejecting impossible actions or narrating them as failures based on the character, environment, world effects, statuses, and luck. 
+
+TIME ENGINE:
+- You MUST calculate exact time duration in seconds by referencing a standardized Time Cost Table within the rules.
+- Update "World Time" (WorldTime.txt) which functions as the absolute global variable. 
+- FORMAT: "H:MM:SS AM/PM - Month DD, YYYY" (e.g., 2:32:16 PM - Feb 10, 2026).
+- Set the initial time/year dynamically based on the genre (e.g., 2076 for Cyberpunk, 1944 for WW2, 1024 for Fantasy).
+- Evaluates duration and possess the autonomy to interrupt the player's action if a significant event occurs within that timeframe.
+
+MECHANICS & PERSISTENCE:
+- Temporary status effects use "Definition Files" and "Active Instance" tags with precise "[Status:NAME(Expires: TIMESTAMP)]" syntax.
+- Location is tracked via coordinate/zone tags.
+- Object Registry: Unique instances like [Apple-1(eaten)] or [IronSword_04(rusted)]. Highlight these in text.
+- Character files are DYNAMIC and ACCURATE (e.g., a dog does not have an iPhone).
+- Never forget to create/update NPC files (security guards, townsfolk) when they enter the scene.
+
+DEATH & TERMINATION:
+- If a player's HP reaches 0, you MUST set "gameOver": true.
+- In your "files" output, you MUST set the character file to NULL to delete it.
+- Narrate a definitive end.
+
+FILE MINIMIZATION:
+- Only include files that are NEW, MODIFIED, or DELETED.
+- DO NOT re-include unchanged files.
+
+JSON RESPONSE FORMAT:
+{
+  "narrative": "Text for the player...",
+  "files": { "FileName.txt": "Content", "OldFile.txt": null },
+  "updates": [{ "text": "Health -10", "value": -10 }],
+  "checks": [{ "name": "Strength", "description": "...", "difficulty": "hard" }],
+  "recommendations": ["Action A", "Action B"],
+  "gameOver": false
+}
 
 1. Create and manage text files as the source of truth
 2. Generate world content on-demand based on player perception
@@ -288,38 +326,19 @@ export class AIEngine {
     return new Promise((resolve) => {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
-          const files = this.fs.getAll();
-
-          // Separate character files from other files for better focus
-          const charFiles = Object.entries(files).filter(([name]) => name.includes(`-${username}`) || name.toLowerCase().startsWith('character'));
-          const otherFiles = Object.entries(files).filter(([name]) => !charFiles.find(([cn]) => cn === name));
-
+          const files = this.getRelevantFiles(username, action);
           const formatFileSet = (fileEntries: [string, string][]) =>
             fileEntries.map(([name, content]) => `=== ${name} ===\n${content}`).join('\n\n');
 
-          const charContext = charFiles.length > 0 ? `ACTIVE CHARACTER FILES:\n${formatFileSet(charFiles)}\n\n` : '';
-          const worldContext = `WORLD FILES:\n${formatFileSet(otherFiles)}`;
+          const worldContext = formatFileSet(Object.entries(files));
 
-          // Pre-compute spatial context with exact distances
-          const spatialContext = this.buildSpatialContext(username);
           // Capture old map state for post-processing
           const oldMapRaw = this.fs.read('CurrentMap.json');
 
           const userHeader = username ? `[Player: ${username}]\n` : '';
-          const prompt = `Current Files Summary:\n${charContext}${worldContext}\n\n${spatialContext}\n${userHeader}Player action: ${action}\n\nProcess this action.
-          
-CRITICAL REMINDER: 
-1. If the player's action causes ANY change to their stats (Health, Energy, Inventory), you MUST include the updated character file content in your 'files' response.
-2. If NPCs or entities are modified, their files MUST be updated.
-3. The files listed above are your ONLY source of truth. Do not invent stats that contradict the files.
-4. PROBABILITY ENGINE RULE: If the action is uncertain, has a chance of failure, or involves stats/skills, return "checks" and an empty narrative.
-5. Ensure all stats use the new dynamic probability engine modifier format.
-6. NO VAGUE MAGIC: Any spell, superpower, or supernatural ability MUST be strictly documented with limits (e.g., max weight 5 lbs, max range 10m), strict energy costs per use, and exact constraints. "Vague magic" is rejected.
-7. FILE MINIMIZATION (CRITICAL): Do NOT re-include files in 'files' if their content has NOT changed. Only include files that are NEW, MODIFIED, or DELETED. Repeating unchanged files wastes resources.
-8. MAP POSITION UPDATE (CRITICAL): You MUST update CurrentMap.json in EVERY response. The SPATIAL CONTEXT above shows exact distances — use those numbers. If the player interacts with anything, move them to the appropriate position. If they are too far, move them toward it by their speed × time. Always update facing direction.${mapScreenshot ? '\n9. A screenshot of the current map is attached. Use it to visually verify spatial consistency.' : ''}
-${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. If NO file ends in "-${username}.txt", you MUST create the character file immediately using the ENTITY FILE SCHEMA. If one ALREADY EXISTS, do NOT create another one.` : ''}`;
+          const prompt = `Current Files Context:\n${worldContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.`;
 
-          const res = await this.handleRequest(prompt, mapScreenshot, username);
+          const res = await this.handleRequest(prompt, undefined, username, 'gemini-3.1-flash-lite-preview');
 
           // Post-process: enforce spatial consistency on the returned map
           // Use oldMapRaw if it was valid, otherwise fall back to lastValidMap
@@ -338,84 +357,96 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
   }
 
   /**
-   * Pre-computes exact Euclidean distances from the active player to nearby entities on the map.
-   * Only includes entities within the player's vision/interaction range to keep the prompt efficient.
-   * Returns a formatted string block to inject into the prompt.
+   * Selects only the files necessary for the current context.
+   * Prioritizes core files, player files, and spatially relevant files.
    */
-  private buildSpatialContext(username?: string): string {
-    const mapRaw = this.fs.read('CurrentMap.json');
-    if (!mapRaw) return '';
+  private getRelevantFiles(username?: string, action?: string): { [name: string]: string } {
+    const all = this.fs.getAll();
+    const relevant: { [name: string]: string } = {};
 
-    try {
-      const mapData = JSON.parse(mapRaw);
-      const pages = mapData.pages || (mapData.areas ? [mapData] : []);
-      if (pages.length === 0) return '';
+    // 1. Core Engine Files
+    const core = ['WorldRules.txt', 'Guide.txt', 'WorldTime.txt', 'CurrentMap.json'];
+    for (const f of core) {
+      if (all[f]) relevant[f] = all[f];
+    }
 
-      const lines: string[] = ['[SPATIAL CONTEXT — Nearby entities with pre-computed distances (meters).]'];
+    // 2. Active Player File
+    if (username) {
+      const uLower = username.toLowerCase();
+      const playerFile = Object.keys(all).find(f => {
+        const lower = f.toLowerCase();
+        return lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`);
+      });
+      if (playerFile) relevant[playerFile] = all[playerFile];
+    }
 
-      for (const page of pages) {
-        const players = page.players || [];
-        const areas = page.areas || [];
-
-        for (const player of players) {
-          const px = Number(player.x) || 0;
-          const py = Number(player.y) || 0;
-          const playerLabel = player.username || 'Unknown';
-
-          // Use player's max vision range as the relevance radius, or default 50m
-          const maxRange = Number(player.vision?.maxRange) || 50;
-
-          // Compute distances to all areas, then filter and sort
-          const areaDistances: { name: string; type: string; dist: number; cx: number; cy: number }[] = [];
+    // 3. Spatially Relevant Files
+    const mapRaw = all['CurrentMap.json'];
+    if (mapRaw) {
+      try {
+        const mapData = JSON.parse(mapRaw);
+        const players = mapData.players || [];
+        const areas = mapData.areas || [];
+        
+        // Find current player's location
+        const player = players.find((p: any) => p.username?.toLowerCase() === username?.toLowerCase());
+        if (player) {
+          const px = player.x, py = player.y;
+          const range = 100; // Search radius
+          
           for (const area of areas) {
-            const ax = Number(area.x) || 0;
-            const ay = Number(area.y) || 0;
-            const aw = Number(area.width) || 0;
-            const ah = Number(area.height) || 0;
-            const cx = area.shape === 'circle' ? ax : ax + aw / 2;
-            const cy = area.shape === 'circle' ? ay : ay + ah / 2;
-            const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
-            const name = area.name || area.id || `area_${areas.indexOf(area)}`;
-            areaDistances.push({ name, type: area.type || 'unknown', dist, cx, cy });
+            const dist = Math.sqrt((area.x - px) ** 2 + (area.y - py) ** 2);
+            if (dist < range) {
+              const fileMatch = Object.keys(all).find(f => f.toLowerCase().includes(area.name?.toLowerCase()));
+              if (fileMatch) relevant[fileMatch] = all[fileMatch];
+            }
           }
-
-          // Filter to entities within range and sort closest first
-          const nearby = areaDistances
-            .filter(a => a.dist <= maxRange * 1.5) // slight buffer beyond vision
-            .sort((a, b) => a.dist - b.dist);
-
-          if (nearby.length === 0 && areaDistances.length > 0) {
-            // If nothing is in range, show the 3 closest so the AI knows what's nearest
-            areaDistances.sort((a, b) => a.dist - b.dist);
-            nearby.push(...areaDistances.slice(0, 3));
-          }
-
-          const distLines = nearby.map(a =>
-            `  → ${a.name} (${a.type}): ${a.dist.toFixed(1)}m [at (${a.cx.toFixed(1)}, ${a.cy.toFixed(1)})]`
-          );
-
-          // Other players are always relevant
-          for (const other of players) {
-            if (other.username === player.username) continue;
-            const ox = Number(other.x) || 0;
-            const oy = Number(other.y) || 0;
-            const dist = Math.sqrt((px - ox) ** 2 + (py - oy) ** 2);
-            distLines.push(`  → Player ${other.username}: ${dist.toFixed(1)}m [at (${ox.toFixed(1)}, ${oy.toFixed(1)})]`);
-          }
-
-          lines.push(`${playerLabel} at (${px.toFixed(1)}, ${py.toFixed(1)}), facing ${player.facing || 0}°:`);
-          lines.push(...distLines);
         }
+      } catch (e) {}
+    }
 
-        if (page.scale) {
-          lines.push(`Map scale: ${page.scale}`);
+    // 4. Action Keyword Matching
+    if (action) {
+      const words = action.toLowerCase().split(/\W+/);
+      for (const f of Object.keys(all)) {
+        const baseName = f.replace('.txt', '').toLowerCase();
+        if (words.some(w => w.length > 3 && baseName.includes(w))) {
+          relevant[f] = all[f];
         }
       }
+    }
 
-      return lines.join('\n');
+    // 5. Fallback if directory is small
+    if (Object.keys(all).length < 15) return all;
+
+    return relevant;
+  }
+  /**
+   * Safe JSON repair for common AI mistakes
+   */
+  private repairJSON(raw: string): string | null {
+    try {
+      let s = raw.trim();
+      // Remove possible markdown wrappers
+      s = s.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '').trim();
+
+      // Remove trailing commas before } or ]
+      s = s.replace(/,\s*([}\]])/g, '$1');
+
+      // Unquoted keys fix
+      s = s.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+
+      // Basic brace balancing
+      let delta = 0;
+      for (const char of s) {
+        if (char === '{') delta++;
+        if (char === '}') delta--;
+      }
+      while (delta > 0) { s += '}'; delta--; }
+      
+      return s;
     } catch (e) {
-      console.error('Failed to build spatial context', e);
-      return '';
+      return null;
     }
   }
 
@@ -597,9 +628,9 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
     return null;
   }
 
-  private async handleRequest(userPrompt: string, mapScreenshot?: string, username?: string): Promise<AIResponse | null> {
+  private async handleRequest(userPrompt: string, mapScreenshot?: string, username?: string, modelName?: string): Promise<AIResponse | null> {
     // Phase 1: Analyze/Execute
-    let responseText = await this.callAI(userPrompt, mapScreenshot);
+    let responseText = await this.callAI(userPrompt, mapScreenshot, modelName);
     let data: AIResponse;
 
     try {
@@ -614,9 +645,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
       // Also process any file updates from Phase 1 so they aren't lost
       this.processResponseData(data);
 
-      // 0. Catalog all potential world rules/modifiers from all files
-      // we pass username to filter out OTHER players' character files
-      const worldState = this.getWorldContextForAI(username);
+      const worldState = this.getWorldContextForAI(username, userPrompt);
 
       const results = await Promise.all(data.checks.map(async check => {
         // Normalize alternate AI check formats
@@ -699,7 +728,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
 
       // We make a fresh call with the context combined, as we don't maintain a full chat history object here 
       // (The FS is the history source of truth).
-      responseText = await this.callAI(followUpPrompt, undefined);
+      responseText = await this.callAI(followUpPrompt, undefined, modelName);
       try {
         data = this.extractJSON(responseText);
       } catch (e) {
@@ -988,40 +1017,12 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
     }
   }
 
-  /**
-   * Calculates a cumulative bonus for a check by scanning ALL files for modifiers.
-   * Modifiers can come from:
-   * 1. Character stats (formula parsing)
-   * 2. World rules (+X% to Stat)
-   * 3. Item bonuses
-   * 4. Active status effects
-   */
-  /**
-   * Scans all files and extracts lines that appear to be mathematical rules, stats, or modifiers.
-   * If a username is provided, it excludes character files of other players.
-   */
-  /**
-   * Provides a structured view of all relevant world and character files 
-   * for the AI to analyze for checks.
-   */
-  private getWorldContextForAI(username?: string): string {
-    const files = this.fs.getAll();
-    const uLower = username?.toLowerCase();
+
+  private getWorldContextForAI(username?: string, action?: string): string {
+    const files = this.getRelevantFiles(username, action);
     const contextBlocks: string[] = [];
 
     for (const [filename, content] of Object.entries(files)) {
-      // Multiplayer protection: Ignore other players' character files
-      if (uLower && filename.endsWith('.txt') && filename.includes('-')) {
-        const parts = filename.split('-');
-        const fileUsername = parts[parts.length - 1].replace('.txt', '').toLowerCase();
-        if (fileUsername !== uLower && this.isKnownPlayer(fileUsername)) {
-          continue;
-        }
-      }
-
-      // Skip large binary-like files or the map (AI already has map context)
-      if (filename === 'CurrentMap.json') continue;
-
       contextBlocks.push(`=== FILE: ${filename} ===\n${content}`);
     }
     return contextBlocks.join('\n\n');
@@ -1248,56 +1249,8 @@ INSTRUCTIONS:
     }
     return parseInt(clean) || 0;
   }
-  private repairJSON(raw: string): string | null {
+  private async callAI(prompt: string, mapScreenshot?: string, modelName?: string): Promise<string> {
     try {
-      let s = raw.trim();
-
-      // Remove trailing commas before } or ] (common AI mistake)
-      s = s.replace(/,\s*([}\]])/g, '$1');
-
-      // Replace single-quoted strings with double-quoted
-      // Only do this outside of already double-quoted strings
-      s = s.replace(/'([^'\n]*?)'/g, (match, inner) => {
-        // Don't replace if it looks like it's inside a double-quoted string
-        return `"${inner.replace(/"/g, '\\"')}"`;
-      });
-
-      // Try to fix unquoted keys: word: -> "word":
-      s = s.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
-
-      // Count brackets to detect truncation
-      let braceCount = 0;
-      let bracketCount = 0;
-      for (const ch of s) {
-        if (ch === '{') braceCount++;
-        else if (ch === '}') braceCount--;
-        else if (ch === '[') bracketCount++;
-        else if (ch === ']') bracketCount--;
-      }
-
-      // If brackets are unbalanced (truncated), try to close them
-      // But only if we're missing a small number of closing brackets
-      if (braceCount > 0 && braceCount <= 5) {
-        // Remove any trailing partial key-value (e.g., "key": or "key": "val)
-        s = s.replace(/,\s*"[^"]*"\s*:\s*(?:"[^"]*)?$/, '');
-        s = s.replace(/,\s*$/, '');
-        for (let i = 0; i < bracketCount; i++) s += ']';
-        for (let i = 0; i < braceCount; i++) s += '}';
-      } else if (bracketCount > 0 && bracketCount <= 5) {
-        s = s.replace(/,\s*$/, '');
-        for (let i = 0; i < bracketCount; i++) s += ']';
-        for (let i = 0; i < braceCount; i++) s += '}';
-      }
-
-      return s;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  private async callAI(prompt: string, mapScreenshot?: string): Promise<string> {
-    try {
-      // Build contents with optional map screenshot for multimodal context
       let contents: any;
       if (mapScreenshot) {
         contents = [
@@ -1315,11 +1268,16 @@ INSTRUCTIONS:
           }
         ];
       } else {
-        contents = prompt;
+        contents = [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ];
       }
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite-preview',
+        model: modelName || 'gemini-3.1-flash-lite-preview',
         contents: contents,
         config: {
           systemInstruction: SYSTEM_PROMPT,
