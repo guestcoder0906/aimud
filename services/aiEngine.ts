@@ -139,7 +139,7 @@ THRESHOLD CALIBRATION (CRITICAL — READ CAREFULLY):
 - Example moderate combat check: {"name": "Sword Strike", "difficulty": "moderate", "thresholds": {"Critical Success": 850, "Success": 500, "Partial Success": 300}} (Rolls 0-299 = Failure/Crit Failure)
 
 DYNAMIC STATS RULE (CRITICAL):
-- Stats must NOT be stale numbers (e.g., "Agility: 25").
+- Stats must NOT be stale numbers (e.g., "Agility: 25") and MUST NOT use tabletop dice notation (e.g., "1d20", "2d6"). Using dice rolls is strictly FORBIDDEN.
 - Stats must be represented as modifiers to the base probability engine (0-1000) and include dynamic context and effects.
 - Example format for stats:
   * agility: base probability engine + 5%(1000) + effects
@@ -357,7 +357,8 @@ CRITICAL REMINDERS:
 6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
 7. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
 8. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
-${mapScreenshot ? '9. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+9. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
+${mapScreenshot ? '10. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
