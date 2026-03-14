@@ -21,6 +21,7 @@ TIME ENGINE:
 - Update "World Time" (WorldTime.txt) which functions as the absolute global variable. 
 - FORMAT: "H:MM:SS AM/PM - Month DD, YYYY" (e.g., 2:32:16 PM - Feb 10, 2026).
 - Set the initial time/year dynamically based on the genre (e.g., 2076 for Cyberpunk, 1944 for WW2, 1024 for Fantasy).
+- CRITICAL: Time costs are for the player's DURATION of action. They are NEVER mathematical modifiers for success or failure in the Probability Engine.
 - Evaluates duration and possess the autonomy to interrupt the player's action if a significant event occurs within that timeframe.
 
 MECHANICS & PERSISTENCE:
@@ -44,7 +45,10 @@ JSON RESPONSE FORMAT:
   "narrative": "Text for the player...",
   "files": { "FileName.txt": "Content", "OldFile.txt": null },
   "updates": [{ "text": "Health -10", "value": -10 }],
-  "checks": [{ "name": "Strength", "description": "...", "difficulty": "hard" }],
+  "checks": [
+    { "name": "Magic Focus", "description": "Maintaining the focus while under threat", "difficulty": "moderate", "stat": "willpower" },
+    { "name": "Strength", "description": "Lifting the heavy gate", "difficulty": "hard", "stat": "strength" }
+  ],
   "recommendations": ["Action A", "Action B"],
   "gameOver": false
 }
@@ -117,6 +121,7 @@ PROBABILITY ENGINE RULE (CRITICAL):
   * Resistance against effects, toxins, or mental influence
 - If an action should be modified by stats (e.g., Agility, Strength), you MUST define a "stat" field in the "checks" object that matches the exact stat name.
 - THE ENGINE IS DYNAMIC (CRITICAL): The backend probability engine will automatically scan ALL world files, analyze your "description" and "stat" fields, and DYNAMICALLY select every relevant mathematical modifier (including items, world rules, and character formulae) that accurately applies to that specific action context.
+- TIME IS NOT A MODIFIER: Time costs (duration) are strictly for the TIME ENGINE. Never include "+30s" or time-based strings as a modifier in a "checks" object.
 - If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
 
 THRESHOLD CALIBRATION (CRITICAL — READ CAREFULLY):
@@ -356,10 +361,12 @@ CRITICAL REMINDERS:
 4. PERCEPTION AUDIT (CRITICAL): If your narrative mentions an NPC, item, or location that does not have a technical file in the "Current Files Context" above, you MUST create that file NOW. Never mention something without providing its technical definition.
 5. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
 6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
-7. PROBABILITY ENGINE: Use "checks" for ANY action with risk. This INCLUDES Magic Focus, Concentration, or maintaining abilities. If risk is involved, your "narrative" field MUST be an empty string.
-8. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
-9. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
-${mapScreenshot ? '10. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+7. PROBABILITY ENGINE: Use "checks" for ANY action with risk. Mandatory for combat, stealth, and skills.
+8. MAGIC focus: You MUST include "Magic Focus" or "Concentration" checks for casting or maintaining abilities.
+9. TIME IS NOT A MODIFIER: Never include time costs (e.g. +30s) in your "checks" modifiers. Time is for duration only.
+10. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
+11. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
+${mapScreenshot ? '12. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
