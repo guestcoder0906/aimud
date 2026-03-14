@@ -352,11 +352,12 @@ CRITICAL REMINDERS:
 1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction.
 2. WORLD GENERATION: If the player enters a new area or asks about something not yet defined, you MUST create the necessary Location, NPC, or Item files immediately.
 3. KNOWN GEAR: If the player has standard items (Dagger, Potion), ensure they have global files. If the items are UNIQUE/CUSTOM, define their stats directly in the character sheet. If data is missing or not in a file yet, create it NOW.
-4. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
-5. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
-6. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
-7. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
-${mapScreenshot ? '8. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+4. PERCEPTION AUDIT (CRITICAL): If your narrative mentions an NPC, item, or location that does not have a technical file in the "Current Files Context" above, you MUST create that file NOW. Never mention something without providing its technical definition.
+5. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
+6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
+7. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
+8. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
+${mapScreenshot ? '9. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
@@ -419,7 +420,11 @@ ${mapScreenshot ? '8. A screenshot of the current map is attached. Use it to ver
           for (const area of areas) {
             const dist = Math.sqrt((area.x - px) ** 2 + (area.y - py) ** 2);
             if (dist < range) {
-              const fileMatch = Object.keys(all).find(f => f.toLowerCase().includes(area.name?.toLowerCase()));
+              const aName = area.name?.toLowerCase().replace(/\W/g, '') || '';
+              const fileMatch = Object.keys(all).find(f => {
+                const fName = f.toLowerCase().replace('.txt', '').replace(/\W/g, '');
+                return fName.includes(aName) || aName.includes(fName);
+              });
               if (fileMatch) relevant[fileMatch] = all[fileMatch];
             }
           }
@@ -439,7 +444,7 @@ ${mapScreenshot ? '8. A screenshot of the current map is attached. Use it to ver
     }
 
     // 5. Fallback if directory is small
-    if (Object.keys(all).length < 15) return all;
+    if (Object.keys(all).length < 40) return all;
 
     return relevant;
   }
