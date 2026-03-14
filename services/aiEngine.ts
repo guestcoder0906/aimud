@@ -353,7 +353,8 @@ CRITICAL REMINDERS:
 3. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
 4. FILE UPDATES: Include modified files in your 'files' JSON. Update HP/Energy in the character file if they change.
 5. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
-${mapScreenshot ? '6. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+6. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback).
+${mapScreenshot ? '7. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
@@ -923,19 +924,27 @@ ${mapScreenshot ? '6. A screenshot of the current map is attached. Use it to ver
     // Dynamic Critical Failure Range based on Difficulty
     // The higher the difficulty, the larger the proportion of the failure range that is "critical"
     const critFailPercentages: { [key: string]: number } = {
-      'trivial': 0.02,        // 2% of failure range
-      'easy': 0.05,           // 5% of failure range
-      'moderate': 0.10,       // 10% of failure range
-      'hard': 0.20,           // 20% of failure range
-      'very_hard': 0.35,      // 35% of failure range
-      'near_impossible': 0.50 // 50% of failure range
+      'trivial': 0.05,        // 5% of failure range
+      'easy': 0.10,           // 10% of failure range
+      'moderate': 0.15,       // 15% of failure range
+      'hard': 0.25,           // 25% of failure range
+      'very_hard': 0.40,      // 40% of failure range
+      'near_impossible': 0.60 // 60% of failure range
     };
 
-    const percentage = critFailPercentages[difficulty] ?? 0.10;
+    const percentage = critFailPercentages[difficulty] ?? 0.15;
     const critFailCutoff = Math.floor(lowestThreshold * percentage);
 
-    // Context-based tweak: If difficulty is hard or higher, ensure at least a small floor
-    const minFloor = (difficulty === 'hard' || difficulty === 'very_hard' || difficulty === 'near_impossible') ? 50 : 0;
+    // Context-based tweak: Ensure a minimum absolute floor for critical failures
+    const minFloors: { [key: string]: number } = {
+      'trivial': 25,
+      'easy': 40,
+      'moderate': 60,
+      'hard': 100,
+      'very_hard': 150,
+      'near_impossible': 200
+    };
+    const minFloor = minFloors[difficulty] ?? 50;
     const finalCutoff = Math.max(minFloor, critFailCutoff);
 
     if (roll <= finalCutoff) {
