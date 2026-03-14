@@ -59,7 +59,7 @@ JSON RESPONSE FORMAT:
 14. Use target(Player1, Player2)[Secret message] syntax for private narrative or NPC dialogue meant only for specific players. Both hide[] and target() can be used on EXACT file names (e.g. "target(Bob)[Secret Note].txt") OR inside the file content OR in the narrative response.
 15. Update files dynamically and accurately
 16. NEVER forget to create/update files for NPCs, items, locations, or any entities.
-17. KNOWN INVENTORY & EQUIPMENT (CRITICAL): If a character (player or NPC) has items listed in their [INVENTORY & EQUIPMENT] section, you MUST immediately generate matching technical files for those items (e.g. "Gauntlet.txt", "IronSword_01.txt"). These files must contain the item's weight, dimensions, stats, energy costs, and special properties. A player should always know the technical details of the gear they are carrying.
+17. KNOWN INVENTORY & EQUIPMENT (CRITICAL): If an item is a general/standard world item (e.g. "Dagger", "IronSword"), create a SEPARATE global file for it so others (NPCs/players) can use it. If an item is UNIQUE or CUSTOM to a specific entity (e.g. "MakeshiftGauntlet", "Bob'sRustyKey"), do NOT create a separate file; instead, define its full technical stats (weight, damage, properties) directly within that entity's character file under the [INVENTORY & EQUIPMENT] section for efficiency. A player should always know the technical details of the gear they are carrying.
 18. The game starts by generating the world. THEN, players will provide character descriptions. You MUST create their character files using EXACTLY this name format: "CharacterName-USERNAME.txt" (e.g., if USERNAME is Bob and his character is an elf named Legolas, the file MUST be "Legolas-Bob.txt").
 
 STAT PERSISTENCE RULE (CRITICAL):
@@ -351,12 +351,12 @@ export class AIEngine {
 CRITICAL REMINDERS:
 1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction.
 2. WORLD GENERATION: If the player enters a new area or asks about something not yet defined, you MUST create the necessary Location, NPC, or Item files immediately.
-3. KNOWN GEAR: If the player has items in their inventory/equipment list, ensure those items have technical files (e.g. "Gauntlet.txt"). If they are missing, create them NOW.
+3. KNOWN GEAR: If the player has standard items (Dagger, Potion), ensure they have global files. If the items are UNIQUE/CUSTOM, define their stats directly in the character sheet. If data is missing or not in a file yet, create it NOW.
 4. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
 5. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
-5. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
-6. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
-${mapScreenshot ? '7. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+6. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
+7. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
+${mapScreenshot ? '8. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
 
