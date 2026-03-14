@@ -223,58 +223,61 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {activeTab === 'files' ? (
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {visibleFiles.map(filename => {
-              const isExpanded = expandedFile === filename;
-              const content = fileSystem.read(filename) || '';
-              const displayName = fileSystem.getDisplayName(filename);
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {visibleFiles.map(filename => {
+                const isExpanded = expandedFile === filename;
+                const content = fileSystem.read(filename) || '';
+                const displayName = fileSystem.getDisplayName(filename);
 
-              return (
-                <div key={filename} ref={isExpanded ? expandedRef : null} className="bg-neutral-800/50 rounded overflow-hidden">
-                  <div
-                    className={`px-2 py-1.5 cursor-pointer hover:bg-neutral-800 flex items-center gap-2 ${isExpanded ? 'bg-neutral-800' : ''}`}
-                    onClick={() => setExpandedFile(isExpanded ? null : filename)}
-                  >
-                    {isExpanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
-                    <span className="text-blue-400 font-semibold truncate">{displayName}</span>
-                  </div>
-                  {isExpanded && (
+                return (
+                  <div key={filename} ref={isExpanded ? expandedRef : null} className="bg-neutral-800/50 rounded overflow-hidden">
                     <div
-                      className="p-2 border-t border-neutral-700 bg-black text-gray-400 whitespace-pre-wrap text-[10px] md:text-xs leading-relaxed"
-                      onClick={handleContentClick}
+                      className={`px-2 py-1.5 cursor-pointer hover:bg-neutral-800 flex items-center gap-2 ${isExpanded ? 'bg-neutral-800' : ''}`}
+                      onClick={() => setExpandedFile(isExpanded ? null : filename)}
                     >
-                      <span dangerouslySetInnerHTML={{ __html: parseLinks(formatContent(content)) }} />
+                      {isExpanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
+                      <span className="text-blue-400 font-semibold truncate">{displayName}</span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    {isExpanded && (
+                      <div
+                        className="p-2 border-t border-neutral-700 bg-black text-gray-400 whitespace-pre-wrap text-[10px] md:text-xs leading-relaxed"
+                        onClick={handleContentClick}
+                      >
+                        <span dangerouslySetInnerHTML={{ __html: parseLinks(formatContent(content)) }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Status Section inside Files Tab */}
+            <div className="h-1/3 min-h-[120px] border-t border-neutral-800 flex flex-col bg-neutral-950">
+              <div className="p-2 border-b border-neutral-800 bg-neutral-900 text-gray-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <Activity size={12} /> Live Status Updates
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] md:text-xs">
+                {updates.length === 0 && <span className="text-gray-700 italic">No updates...</span>}
+                {updates.map((u, i) => (
+                  <div key={i} className="mb-1 animate-in fade-in slide-in-from-left-2 duration-300">
+                    <span className={
+                      u.value < 0 ? 'text-red-400' :
+                        u.value > 0 ? 'text-green-400' :
+                          'text-yellow-400'
+                    }>
+                      {u.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        ) : null}
-          <div className={`flex-1 overflow-hidden ${activeTab !== 'map' ? 'h-0 overflow-hidden absolute' : ''}`}>
+        ) : (
+          <div className="flex-1 overflow-hidden relative">
             <MapPanel ref={mapPanelRef} fileSystem={fileSystem} files={files} username={username} debugMode={debugMode} syncCount={syncCount} />
           </div>
-      </div>
-
-      {/* Status Section */}
-      <div className="h-1/3 min-h-[150px] flex flex-col bg-neutral-950">
-        <div className="p-2 border-b border-neutral-800 bg-neutral-900 text-gray-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
-          <Activity size={12} /> System Logs
-        </div>
-        <div className="flex-1 overflow-y-auto p-2 font-mono text-xs">
-          {updates.length === 0 && <span className="text-gray-700 italic">No updates...</span>}
-          {updates.map((u, i) => (
-            <div key={i} className="mb-1">
-              <span className={
-                u.value < 0 ? 'text-red-400' :
-                  u.value > 0 ? 'text-green-400' :
-                    'text-yellow-400'
-              }>
-                {u.text}
-              </span>
-            </div>
-          ))}
-        </div>
+        )}
       </div>
 
     </div>

@@ -543,11 +543,26 @@ function App() {
           username={username}
         />
 
+        {/* Floating Status Updates (Bottom Right) */}
+        {!gameOver && updates.length > 0 && (
+          <div className="absolute bottom-24 right-4 z-20 flex flex-col gap-1 items-end pointer-events-none">
+            {updates.slice(0, 5).map((u, i) => (
+              <div key={i} className="bg-black/80 border border-neutral-800 px-3 py-1 rounded text-xs font-mono shadow-xl animate-in slide-in-from-right-10 fade-in duration-500">
+                <span className={u.value < 0 ? 'text-red-400' : u.value > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                  {u.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {gameOver && (
-          <div className="absolute inset-0 flex items-center justify-center bg-red-900/20 backdrop-blur-sm z-20 pointer-events-none">
-            <div className="bg-black border-2 border-red-600 p-8 rounded text-center shadow-[0_0_50px_rgba(220,38,38,0.5)]">
-              <h1 className="text-4xl font-bold text-red-600 mb-2">TERMINATED</h1>
-              <p className="text-gray-400">Please reset the system to restart.</p>
+          <div className="absolute inset-0 flex items-center justify-center bg-red-950/40 backdrop-blur-md z-30 pointer-events-none">
+            <div className="bg-black border-4 border-red-600 p-12 rounded-xl text-center shadow-[0_0_100px_rgba(220,38,38,0.7)] transform animate-in zoom-in duration-500">
+              <h1 className="text-6xl font-black text-red-600 mb-4 tracking-tighter">TERMINATED</h1>
+              <p className="text-xl text-red-400 font-bold mb-6">Vital signs zero. Neural link severed.</p>
+              <div className="h-px bg-red-900 w-full mb-6"></div>
+              <p className="text-gray-400 text-sm animate-pulse">You died! Reset for a new adventure.</p>
             </div>
           </div>
         )}
