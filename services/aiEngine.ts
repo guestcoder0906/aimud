@@ -351,9 +351,9 @@ CRITICAL REMINDERS:
 1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction.
 2. WORLD GENERATION: If the player enters a new area or asks about something not yet defined, you MUST create the necessary Location, NPC, or Item files immediately.
 3. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
-4. FILE UPDATES: Include modified files in your 'files' JSON. Update HP/Energy in the character file if they change.
+4. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
 5. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
-6. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback).
+6. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
 ${mapScreenshot ? '7. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
 
           const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
@@ -935,6 +935,16 @@ ${mapScreenshot ? '7. A screenshot of the current map is attached. Use it to ver
     const percentage = critFailPercentages[difficulty] ?? 0.15;
     const critFailCutoff = Math.floor(lowestThreshold * percentage);
 
+    // Absolute Floor: Rolls below this are ALWAYS Critical Failures regardless of thresholds/stats
+    const absoluteFumbleFloors: { [key: string]: number } = {
+      'trivial': 10,
+      'easy': 25,
+      'moderate': 40,
+      'hard': 60,
+      'very_hard': 100,
+      'near_impossible': 150
+    };
+
     // Context-based tweak: Ensure a minimum absolute floor for critical failures
     const minFloors: { [key: string]: number } = {
       'trivial': 25,
@@ -945,9 +955,10 @@ ${mapScreenshot ? '7. A screenshot of the current map is attached. Use it to ver
       'near_impossible': 200
     };
     const minFloor = minFloors[difficulty] ?? 50;
-    const finalCutoff = Math.max(minFloor, critFailCutoff);
-
-    if (roll <= finalCutoff) {
+    const fumbleFloor = absoluteFumbleFloors[difficulty] ?? 30;
+    
+    // Outcome determination
+    if (roll <= fumbleFloor || roll <= Math.max(minFloor, critFailCutoff)) {
       return "Critical Failure";
     }
     return "Failure";
@@ -986,15 +997,15 @@ ${mapScreenshot ? '7. A screenshot of the current map is attached. Use it to ver
     thresholds: { [key: string]: number },
     difficulty: string
   ): { [key: string]: number } {
-    // Minimum "Success" threshold floors per difficulty
-    // This ensures the failure range is at least this percentage
+    // Minimum "Success" threshold floors per difficulty (Realism Tuning)
+    // This ensures that even with huge bonuses, the game remains challenging.
     const minSuccessFloors: { [key: string]: number } = {
-      'trivial': 100,       // ~10% fail minimum
-      'easy': 200,          // ~20% fail minimum  
-      'moderate': 350,      // ~35% fail minimum
-      'hard': 500,          // ~50% fail minimum
-      'very_hard': 650,     // ~65% fail minimum
-      'near_impossible': 800 // ~80% fail minimum
+      'trivial': 150,       // 15% fail minimum (was 10%)
+      'easy': 250,          // 25% fail minimum (was 20%)  
+      'moderate': 400,      // 40% fail minimum (was 35%)
+      'hard': 600,          // 60% fail minimum (was 50%)
+      'very_hard': 750,     // 75% fail minimum (was 65%)
+      'near_impossible': 900 // 90% fail minimum (was 80%)
     };
 
     const floor = minSuccessFloors[difficulty] ?? 350; // default to moderate
