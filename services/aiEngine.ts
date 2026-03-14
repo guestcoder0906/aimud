@@ -318,6 +318,40 @@ Set gameOver to true ONLY when player health/critical stat reaches 0.
 Always include 1-3 dynamic auto ai action recommendations for the player based on context so far in the "recommendations" array.
 For starting prompt, create initial world files with appropriate time/year and set the scene.`;
 
+const ACTION_AUDIT_PROMPT = `TASK: Technical Requirement Audit.
+You are the High-Efficiency Logic Auditor for the AI-MUD system.
+
+Your ONLY goal is to analyze the player's action against the "World Context" and "Guide" to identify every technical system requirement.
+
+INSTRUCTIONS:
+1. AUDIT FOR CHECKS: Identify if the action requires a probability check (Combat, Stealth, Magic Focus, Physical feats, etc.).
+2. AUDIT FOR ENTITIES: List every NPC, Weapon, Item, or Location mentioned that does NOT have a file in context.
+3. AUDIT FOR MAP: Determine if the player moved or the environment changed.
+4. DETECT MODIFIERS: For any check identified, scan the context for mathematical modifiers (stats, items, rules, effects).
+
+OUTPUT FORMAT (Strict JSON only):
+{
+  "intent": "Brief description of what the player is doing",
+  "checks": [
+    {
+      "name": "Check Name",
+      "reason": "Why this check is needed",
+      "difficulty": "trivial|easy|moderate|hard|very_hard|near_impossible",
+      "stat": "relevant_primary_attribute",
+      "modifiers": [
+        { "label": "Modifier Name", "math": "base + X%(1000) or +X", "origin": "filename.txt", "reasoning": "..." }
+      ]
+    }
+  ],
+  "filesToCreate": ["List of filenames to immediately generate"],
+  "filesToUpdate": ["List of filenames that must be modified (Player, NPCs, etc)"],
+  "mapUpdateRequired": true,
+  "interruptedTime": null
+}
+
+CRITICAL: Ignore time-based strings (+30s) in math. Magic abilities MUST require "Magic Focus" or "Arcana" checks. Weapons MUST use technical rules.`;
+
+
 export class AIEngine {
   private fs: FileSystem;
   private ai: GoogleGenAI;
@@ -369,47 +403,75 @@ export class AIEngine {
             fileEntries.map(([name, content]) => `=== ${name} ===\n${content}`).join('\n\n');
 
           const worldContext = formatFileSet(Object.entries(files));
-
-          // Capture old map state for post-processing
-          const oldMapRaw = this.fs.read('CurrentMap.json');
-
           const spatialContext = this.buildSpatialContext(username);
           const userHeader = username ? `[Player: ${username}]\n` : '';
 
-          // Check if player already has a character file to avoid duplication
-          const characterFiles = Object.keys(this.fs.getAll()).filter(f => {
-            const lower = f.toLowerCase();
-            const uLower = username?.toLowerCase();
-            return uLower && (lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`));
-          });
+          // STAGE 1: TECHNICAL AUDIT (THE "THINKING" PHASE)
+          const auditPrompt = `${ACTION_AUDIT_PROMPT}\n\n[WORLD CONTEXT]\n${worldContext}\n\n[SPATIAL CONTEXT]\n${spatialContext}\n\n${userHeader}Player action: ${action}`;
+          const auditRaw = await this.callAI(auditPrompt, mapScreenshot, 'gemini-3.1-flash-lite-preview');
+          const audit = this.extractJSON(auditRaw);
 
-          const prompt = `Current Files Context:\n${worldContext}\n\n${spatialContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
+          if (!audit) throw new Error("Audit failed");
 
-CRITICAL REMINDERS:
-1. MAP UPDATE: You MUST update CurrentMap.json in EVERY response. Use the [SPATIAL CONTEXT] above. If the player interacts with an object/NPC, move them to it. Always update facing direction. If you fail to update the map coordinates when the player moves, the state becomes corrupted. NEVER omit the map from your "files" object.
-2. WORLD GENERATION: If the player enters a new area or asks about something not yet defined, you MUST create the necessary Location, NPC, or Item files immediately.
-3. WEAPON AUDIT: Every weapon or tool mentioned MUST have technical rules (Damage, Stats, Stamina Cost). If missing from global files or the character sheet, add them NOW.
-4. PERCEPTION AUDIT (CRITICAL): If your narrative mentions an NPC, item, or location that does not have a technical file in the "Current Files Context" above, you MUST create that file NOW. Never mention something without providing its technical definition.
-5. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
-6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
-7. PROBABILITY ENGINE: Use "checks" for ANY action with risk. Mandatory for combat, stealth, and skills.
-8. MAGIC FOCUS: You MUST include "Magic Focus", "Arcana", or "Channeling" checks for activating or using magic abilities if they have a focus requirement. 
-9. TIME IS NOT A MODIFIER: Never include time costs (e.g. +30s) in your "checks" modifiers. Time is for duration only.
-10. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
-11. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
-12. MAP PRECISION: Ensure the map reflects all permanent changes. If a wall is destroyed or a chest is opened, reflect this in the area/object status. Your CurrentMap.json MUST be valid, parsable JSON.
-${mapScreenshot ? '13. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
+          // STAGE 2: RESOLUTION (BACKEND CALCULATION)
+          let resolvedCheckReport = "";
+          let resolvedCheckDetails = "";
+          
+          if (audit.checks && audit.checks.length > 0) {
+            const results = audit.checks.map((check: any) => {
+              const bonusResult = this.calculateBonusFromAI(check.modifiers || [], username);
+              const totalBonus = bonusResult.total;
+              const difficulty = check.difficulty || 'moderate';
+              
+              let safeThresholds = this.getDefaultThresholds(difficulty);
+              if (totalBonus !== 0) {
+                const shifted: { [key: string]: number } = {};
+                for (const [key, val] of Object.entries(safeThresholds)) {
+                  shifted[key] = Math.max(0, Math.min(1000, val - totalBonus));
+                }
+                safeThresholds = shifted;
+              }
+              safeThresholds = this.enforceRealisticThresholds(safeThresholds, difficulty);
 
-          const res = await this.handleRequest(prompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
+              const roll = Math.floor(Math.random() * 1001);
+              const outcome = this.determineOutcome(roll, safeThresholds, difficulty);
 
-          // Post-process: enforce spatial consistency on the returned map
-          // Use oldMapRaw if it was valid, otherwise fall back to lastValidMap
-          const referenceMap = oldMapRaw || this.lastValidMap;
-          if (res && referenceMap) {
-            this.enforceSpatialConsistency(referenceMap, username);
+              return {
+                name: check.name,
+                outcome,
+                roll,
+                thresholds: safeThresholds,
+                math: bonusResult.breakdown || "No modifiers"
+              };
+            });
+
+            resolvedCheckReport = results.map(r => `[Check: ${r.name} - Result: ${r.outcome}]`).join('\n');
+            resolvedCheckDetails = results.map(r => 
+              `[Probability Check: ${r.name} - Result: ${r.outcome} | Roll: ${r.roll}/1000 | Math: ${r.math} | Thresholds: ${JSON.stringify(r.thresholds).replace(/"/g, '&quot;')}]`
+            ).join(' ');
           }
 
-          resolve(res);
+          // STAGE 3: FINAL IMPLEMENTATION (THE "ACTION" PHASE)
+          const executionPrompt = `Current Files Context:\n${worldContext}\n\n${spatialContext}\n\n${userHeader}Player action: ${action}\n\nTECHNICAL PLAN (Follow strictly):\n1. Resolve these checks: ${resolvedCheckReport || "None"}\n2. Create these files immediately: ${audit.filesToCreate?.join(', ') || "None"}\n3. Update these files: ${audit.filesToUpdate?.join(', ') || "None"}\n4. Map Update Required: ${audit.mapUpdateRequired}\n\nProcess this action based on the technical plan. Ensure every new item, weapon, or entity is created with full technical details.
+
+CRITICAL REMINDERS:
+1. You MUST fulfill Every file creation/update listed in the plan above.
+2. ${resolvedCheckDetails ? `Include this exactly: ${resolvedCheckDetails}` : ""}
+3. MAP UPDATE: Update CurrentMap.json.
+4. WEAPONS: Use ITEM & WEAPON TECHNICAL SCHEMA for any equipment created.
+5. STATS: Use MATH FORMULAS ONLY for stats.`;
+
+          const finalResponse = await this.handleRequest(executionPrompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
+          
+          // Post-process spatial consistency (Old map state already captured via fs.read in handleRequest/enforceSpatialConsistency)
+          const latestMapRaw = this.fs.read('CurrentMap.json');
+          if (finalResponse && latestMapRaw) {
+             // Use the most recent valid map before final implementation as reference
+             const referenceMap = this.lastValidMap || latestMapRaw;
+             this.enforceSpatialConsistency(referenceMap, username);
+          }
+
+          resolve(finalResponse);
         } catch (e) {
           console.error("Processing failed", e);
           resolve({ narrative: "Error processing action." });
