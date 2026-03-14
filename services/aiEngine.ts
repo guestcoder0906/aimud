@@ -307,7 +307,9 @@ export class AIEngine {
     return new Promise((resolve) => {
       this.taskQueue = this.taskQueue.then(async () => {
         try {
-          const charRequirement = "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
+          const charRequirement = username
+            ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
+            : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
           const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".\nCRITICAL: Any magic, abilities, or spells MUST be highly specific with strict limits, energy costs, ranges, and target caps. Vague "magic" is completely unacceptable.`;
           const res = await this.handleRequest(prompt, undefined, username);
@@ -335,10 +337,19 @@ export class AIEngine {
 
           const userHeader = username ? `[Player: ${username}]\n` : '';
           
-          // ADDED CRITICAL PROMPT GUARD FOR DUPLICATE FILES
-          const charFileGuard = username ? `\n\nCRITICAL: Check your context. If a character file for player "${username}" (ending in "-${username}.txt") ALREADY EXISTS, you MUST update that specific file and NOT create a new one. Do not create duplicates.` : '';
+          // Check if player already has a character file to avoid duplication
+          const characterFiles = Object.keys(this.fs.getAll()).filter(f => {
+            const lower = f.toLowerCase();
+            const uLower = username?.toLowerCase();
+            return uLower && (lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`));
+          });
 
-          const prompt = `Current Files Context:\n${worldContext}\n\n${userHeader}Player action: ${action}${charFileGuard}\n\nProcess this action.`;
+          const prompt = `Current Files Context:\n${worldContext}\n\n${userHeader}Player action: ${action}\n\nProcess this action.
+
+CRITICAL REMINDERS:
+1. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `The player ALREADY has character file(s): ${characterFiles.join(', ')}. Use the existing one. DO NOT create a new one.` : `The player has NO character file. You MUST create one using EXACTLY the format "CharacterName-${username}.txt".`}
+2. FILE UPDATES: If stats like Health or Energy change, you MUST include the updated character file in your 'files' response.
+3. SEMANTICS: Only include files in 'files' if they have actually changed.`;
 
           const res = await this.handleRequest(prompt, undefined, username, 'gemini-3.1-flash-lite-preview');
 
@@ -372,20 +383,15 @@ export class AIEngine {
       if (all[f]) relevant[f] = all[f];
     }
 
-    // 2. Active Player File (Robust Search)
+    // 2. Active Player File (include ALL files for this player to be safe)
     if (username) {
       const uLower = username.toLowerCase();
-      // Find ALL files that seem to belong to this user to prevent duplicates
       const playerFiles = Object.keys(all).filter(f => {
         const lower = f.toLowerCase();
-        return lower.endsWith('.txt') && (
-          lower.includes(`-${uLower}`) || 
-          lower.includes(`_${uLower}`) || 
-          lower.includes(`${uLower}.txt`)
-        );
+        return lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`);
       });
-      for (const pf of playerFiles) {
-        relevant[pf] = all[pf];
+      for (const f of playerFiles) {
+        relevant[f] = all[f];
       }
     }
 
@@ -651,8 +657,8 @@ export class AIEngine {
 
     // Phase 2: If checks are required
     if (data.checks && Array.isArray(data.checks) && data.checks.length > 0) {
-      // Also process any file updates from Phase 1 so they aren't lost
-      this.processResponseData(data);
+      // 0. Also process any file updates from Phase 1 so they aren't lost
+      this.processResponseData(data, username);
 
       const worldState = this.getWorldContextForAI(username, userPrompt);
 
@@ -746,7 +752,7 @@ export class AIEngine {
       }
     }
 
-    this.processResponseData(data);
+    this.processResponseData(data, username);
     return data;
   }
 
@@ -940,15 +946,39 @@ export class AIEngine {
     return thresholds;
   }
 
-  private processResponseData(data: AIResponse) {
+  private processResponseData(data: AIResponse, username?: string) {
     if (!data) return;
 
     if (data.files && typeof data.files === 'object' && !Array.isArray(data.files)) {
+      // 1. Check for player file duplicates/naming changes if we have a username
+      if (username) {
+        const uLower = username.toLowerCase();
+        const incomingPlayerFiles = Object.keys(data.files).filter(f => {
+          const lower = f.toLowerCase();
+          return lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`);
+        });
+
+        if (incomingPlayerFiles.length > 0) {
+          // AI is sending at least one player file. Ensure we don't have others with different names.
+          const existingPlayerFiles = this.fs.list().filter(f => {
+            const lower = f.toLowerCase();
+            return lower.endsWith(`-${uLower}.txt`) || lower.endsWith(`_${uLower}.txt`) || lower.includes(` ${uLower}.txt`);
+          });
+
+          // If the AI is creating a NEW filename, delete the old ones
+          for (const oldFile of existingPlayerFiles) {
+            if (!data.files[oldFile]) {
+              console.log(`Auto-cleaning duplicate/old player file: ${oldFile}`);
+              this.fs.delete(oldFile);
+            }
+          }
+        }
+      }
+
       for (const [filename, fileData] of Object.entries(data.files)) {
         if (fileData === null || (typeof fileData === 'object' && fileData.content === null)) {
           this.fs.delete(filename);
         } else if (typeof fileData === 'string') {
-          // Skip if content is identical to what's already stored
           const existing = this.fs.read(filename);
           if (existing === fileData) continue;
           if (filename === 'CurrentMap.json') {
@@ -956,15 +986,14 @@ export class AIEngine {
           } else {
             this.fs.write(filename, fileData);
           }
-        } else if (fileData && typeof fileData === 'object' && fileData.content) {
-          const contentStr = typeof fileData.content === 'object' ? JSON.stringify(fileData.content) : fileData.content;
-          // Skip if content is identical to what's already stored
+        } else if (fileData && typeof fileData === 'object' && (fileData as any).content) {
+          const contentStr = typeof (fileData as any).content === 'object' ? JSON.stringify((fileData as any).content) : (fileData as any).content;
           const existing = this.fs.read(filename);
           if (existing === contentStr) continue;
           if (filename === 'CurrentMap.json') {
             this.writeMapSafe(contentStr);
           } else {
-            this.fs.write(filename, contentStr, fileData.displayName);
+            this.fs.write(filename, contentStr, (fileData as any).displayName);
           }
         }
       }
