@@ -88,8 +88,8 @@ All character/NPC/Entity files MUST follow this structured format for consistenc
 
 [ABILITIES & MAGIC]
 - List EVERY ability, spell, or special power this specific entity has.
-- Each ability MUST include: Name, Energy Cost, Range, Duration, Cooldown, Weight/Size Limit, Elemental Type, and explicit Limitations.
-- Example: "Firebolt: Cost 15 Mana. Range 30m. Deals 20-35 fire damage. Cooldown 5s. Cannot penetrate water barriers. Cannot target objects heavier than 200 lbs."
+- Each ability MUST include: Name, Energy/Mana Cost, Range, Duration, Cooldown, Weight/Size Limit, Elemental Type, Focus/Channeling Requirement, and explicit Limitations.
+- Example: "Firebolt: Cost 15 Mana. Focus: 50 (Arcana). Range 30m. Deals 20-35 fire damage. Cooldown 5s. Requires 1.5s channeling. Cannot penetrate water barriers."
 - If this entity has NO magic or special abilities, write "None".
 - CRITICAL: Character-specific abilities belong ONLY in this character's file. Do NOT put them in WorldRules.txt or other files.
 
@@ -116,8 +116,8 @@ PROBABILITY ENGINE RULE (CRITICAL):
   * Stealth and Detection
   * Social manipulation (Persuasion, Intimidation, Deception)
   * Physical feats (Climbing, jumping, lifting, swimming)
-  * Magic, Technical, or Psychic operations with risk
-  * Magic Focus, Concentration, or maintaining complex abilities, especially under pressure
+  * Magic Channeling, Focusing, or Arcana checks for using/activating abilities
+  * Concentration or maintaining complex abilities, especially under pressure or while taking damage
   * Resistance against effects, toxins, or mental influence
 - If an action should be modified by stats (e.g., Agility, Strength), you MUST define a "stat" field in the "checks" object that matches the exact stat name.
 - THE ENGINE IS DYNAMIC (CRITICAL): The backend probability engine will automatically scan ALL world files, analyze your "description" and "stat" fields, and DYNAMICALLY select every relevant mathematical modifier (including items, world rules, and character formulae) that accurately applies to that specific action context.
@@ -362,7 +362,7 @@ CRITICAL REMINDERS:
 5. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
 6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
 7. PROBABILITY ENGINE: Use "checks" for ANY action with risk. Mandatory for combat, stealth, and skills.
-8. MAGIC focus: You MUST include "Magic Focus" or "Concentration" checks for casting or maintaining abilities.
+8. MAGIC FOCUS: You MUST include "Magic Focus", "Arcana", or "Channeling" checks for activating or using magic abilities if they have a focus requirement. 
 9. TIME IS NOT A MODIFIER: Never include time costs (e.g. +30s) in your "checks" modifiers. Time is for duration only.
 10. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
 11. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
