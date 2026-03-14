@@ -1194,7 +1194,8 @@ INSTRUCTIONS:
    - For flat bonuses (e.g. "+5 to hit"), extract the value.
    - For status effects (e.g. "[Status:Bleeding: -10]"), extract the value.
 3. Only include factors that apply to the ACTOR or the WORLD generally.
-4. Return a JSON array of objects with this exact structure:
+4. IGNORE TIME COSTS: Never include time-based strings (e.g. "+30s", "10 seconds", "1m") as modifiers. They are for the player's duration of action, not the probability check.
+5. Return a JSON array of objects with this exact structure:
    {
      "label": "Short name for the breakdown",
      "math": "The numeric expression or variable name",
@@ -1385,6 +1386,12 @@ INSTRUCTIONS:
    */
   private parseValue(valStr: string): number {
     const clean = valStr.replace(/\s+/g, '').toLowerCase();
+    
+    // Ignore time-based values (+10s, 30sec, 1m) to prevent leaks into math engine
+    if (clean.match(/[+-]?\d+(s|sec|seconds|m|min|minutes|h|hr|hours)$/)) {
+      return 0;
+    }
+
     if (clean.includes('%')) {
       const numMatch = clean.match(/([+-]?\d+)/);
       if (numMatch) {
