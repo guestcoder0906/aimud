@@ -391,7 +391,7 @@ ${mapScreenshot ? '9. A screenshot of the current map is attached. Use it to ver
       if (all[f]) relevant[f] = all[f];
     }
 
-    // 2. Active Player File (include ALL files for this player to be safe)
+    // 2. Active Player Context
     if (username) {
       const uLower = username.toLowerCase();
       const playerFiles = Object.keys(all).filter(f => {
@@ -400,6 +400,14 @@ ${mapScreenshot ? '9. A screenshot of the current map is attached. Use it to ver
       });
       for (const f of playerFiles) {
         relevant[f] = all[f];
+        // SCAN INVENTORY: Pull in technical files for items the player is carrying
+        for (const potentialItemFile of Object.keys(all)) {
+          if (relevant[potentialItemFile]) continue;
+          const base = potentialItemFile.replace('.txt', '').toLowerCase();
+          if (base.length > 2 && all[f].toLowerCase().includes(base)) {
+            relevant[potentialItemFile] = all[potentialItemFile];
+          }
+        }
       }
     }
 
@@ -432,19 +440,19 @@ ${mapScreenshot ? '9. A screenshot of the current map is attached. Use it to ver
       } catch (e) {}
     }
 
-    // 4. Action Keyword Matching
+    // 5. Action Keyword Matching (Broad context sweep)
     if (action) {
-      const words = action.toLowerCase().split(/\W+/);
+      const words = action.toLowerCase().split(/\W+/).filter(w => w.length > 3);
       for (const f of Object.keys(all)) {
-        const baseName = f.replace('.txt', '').toLowerCase();
-        if (words.some(w => w.length > 3 && baseName.includes(w))) {
+        if (relevant[f]) continue;
+        const lowFile = f.toLowerCase();
+        const lowContent = all[f].toLowerCase();
+        // Include if filename matches OR if content matches and action is brief
+        if (words.some(w => lowFile.includes(w) || (lowContent.includes(w) && action.length < 100))) {
           relevant[f] = all[f];
         }
       }
     }
-
-    // 5. Fallback if directory is small
-    if (Object.keys(all).length < 40) return all;
 
     return relevant;
   }
