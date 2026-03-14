@@ -50,7 +50,7 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
     });
 
     // 4. Handle [Probability Check: ...] for detailed math
-    processed = processed.replace(/\[Probability Check:\s*(.*?)\s*-\s*Result:\s*(.*?)\s*\|\s*Roll:\s*(.*?)\s*\|\s*Thresholds:\s*(.*?)\]/g, (match, name, result, roll, thresholds) => {
+    processed = processed.replace(/\[Probability Check:\s*(.*?)\s*-\s*Result:\s*(.*?)\s*\|\s*Roll:\s*(.*?)\s*\|\s*Math:\s*(.*?)\s*\|\s*Thresholds:\s*(.*?)\]/g, (match, name, result, roll, math, thresholds) => {
       const isSuccess = result.toLowerCase().includes('success');
       const baseColor = isSuccess ? 'text-green-300' : 'text-red-300';
 
@@ -62,6 +62,8 @@ const NarrativeWindow: React.FC<NarrativeWindowProps> = ({ history, onReferenceC
             <span class="text-gray-500">Roll:</span> <span class="text-white">${roll}</span>
             <span class="text-gray-500">Result:</span> <span class="${baseColor} font-bold">${result}</span>
           </div>
+          <div class="text-gray-500 mt-1 border-t border-neutral-800 pt-1 text-[10px] uppercase tracking-wider">Calculation</div>
+          <div class="text-xs text-white mb-1 font-mono">${math}</div>
           <div class="text-gray-500 mb-1 border-t border-neutral-800 pt-1 text-[10px] uppercase tracking-wider">Thresholds</div>
           <div class="font-mono text-[10px] whitespace-pre-wrap break-all bg-black/30 p-1 rounded border border-neutral-800/50">${thresholds.replace(/&quot;/g, '"')}</div>
         </span>

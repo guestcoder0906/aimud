@@ -2,6 +2,13 @@ import { GoogleGenAI } from "@google/genai";
 import { FileSystem } from "./fileSystem";
 import { AIResponse, CheckDef } from "../types";
 
+interface DetectedModifier {
+  label: string; 
+  math: string; 
+  origin_file: string; 
+  reasoning: string;
+}
+
 const SYSTEM_PROMPT = `You are the backend engine for an AI-SUD system. Your role is to:
 
 1. Create and manage text files as the source of truth
@@ -76,21 +83,21 @@ THRESHOLD CALIBRATION (CRITICAL — READ CAREFULLY):
 - The roll range is 0-1000. Thresholds define the MINIMUM roll needed for each outcome tier.
 - The system determines the outcome by checking tiers from highest threshold to lowest. If the roll is below ALL thresholds, the result is "Failure" (or "Critical Failure" if applicable).
 - EVERY check MUST include a "difficulty" field set to one of: "trivial", "easy", "moderate", "hard", "very_hard", "near_impossible".
-- Difficulty determines realistic threshold ranges. Use these as BASE guidelines (before stat modifiers):
-  * Trivial (walking, opening an unlocked door): Success ~150+. Failure range ~15%.
-  * Easy (simple climb, basic persuasion): Success ~300+. Failure range ~30%.
-  * Moderate (combat strike, picking a lock, convincing a skeptic): Success ~450-550+. Failure range ~45-55%.
-  * Hard (acrobatic feat, hacking a secure terminal, dodging gunfire): Success ~600-700+. Failure range ~60-70%.
-  * Very Hard (impossible shot, resisting powerful magic, outrunning an explosion): Success ~750-850+. Failure range ~75-85%.
-  * Near Impossible (catching a bullet, persuading a sworn enemy): Success ~900+. Failure range ~90%.
+- Difficulty determines realistic threshold ranges and the probability of "Critical Failure". Use these as BASE guidelines (before stat modifiers):
+  * Trivial (walking, opening an unlocked door): Success ~150+. Failure range ~15%. Crit Failure negligible (~2% of failure).
+  * Easy (simple climb, basic persuasion): Success ~300+. Failure range ~30%. Crit Failure low (~5% of failure).
+  * Moderate (combat strike, picking a lock, convincing a skeptic): Success ~450-550+. Failure range ~45-55%. Crit Failure standard (~10% of failure).
+  * Hard (acrobatic feat, hacking a secure terminal, dodging gunfire): Success ~600-700+. Failure range ~60-70%. Crit Failure high (~20% of failure).
+  * Very Hard (impossible shot, resisting powerful magic, outrunning an explosion): Success ~750-850+. Failure range ~75-85%. Crit Failure severe (~35% of failure).
+  * Near Impossible (catching a bullet, persuading a sworn enemy): Success ~900+. Failure range ~90%. Crit Failure lethal (~50% of failure).
+- DYNAMIC CRITICAL FAILURE: If an action is exceptionally dangerous (e.g. "Defusing a live bomb"), you can explicitly include a "Failure" threshold. Anything rolled BELOW your "Failure" threshold will automatically result in a "Critical Failure".
 - STAT MODIFIERS adjust the base threshold up or down (e.g., high Agility lowers a dodge threshold by 50-100 points; low Strength raises a lifting threshold by 50-100 points).
 - Advantage effects (buffs, good positioning, surprise) LOWER the threshold (making success easier).
 - Disadvantage effects (debuffs, injuries, bad terrain) RAISE the threshold (making success harder).
 - CRITICAL: Do NOT set all thresholds below 200. Most actions in a dangerous world have a real chance of failure. A sword swing against an armored foe should NOT succeed 90% of the time.
 - Include "Critical Success" (highest tier) and optionally "Partial Success" between Success and Failure.
-- Example moderate combat check: {"name": "Sword Strike", "difficulty": "moderate", "thresholds": {"Critical Success": 850, "Success": 500, "Partial Success": 300}}
-- Example easy check with stat bonus: {"name": "Climb Fence", "difficulty": "easy", "thresholds": {"Success": 250, "Partial Success": 150}}
-- Example hard check: {"name": "Dodge Arrow", "difficulty": "hard", "thresholds": {"Critical Success": 950, "Success": 700, "Partial Success": 500}}
+- Example high-stakes check: {"name": "Defuse Bomb", "difficulty": "very_hard", "thresholds": {"Critical Success": 950, "Success": 750, "Failure": 400}} (Rolls 0-399 = Critical Failure)
+- Example moderate combat check: {"name": "Sword Strike", "difficulty": "moderate", "thresholds": {"Critical Success": 850, "Success": 500, "Partial Success": 300}} (Rolls 0-299 = Failure/Crit Failure)
 
 DYNAMIC STATS RULE (CRITICAL):
 - Stats must NOT be stale numbers (e.g., "Agility: 25").
@@ -609,7 +616,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
 
       // 0. Catalog all potential world rules/modifiers from all files
       // we pass username to filter out OTHER players' character files
-      const ruleCatalog = this.catalogRules(username);
+      const worldState = this.getWorldContextForAI(username);
 
       const results = await Promise.all(data.checks.map(async check => {
         // Normalize alternate AI check formats
@@ -617,12 +624,12 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
         const safeDesc = check.description || `Probability roll for ${safeName}`;
         const difficulty = check.difficulty || 'moderate';
 
-        // 1. DYNAMICALLY SELECT RELEVANT RULES USING AI
-        // We pass the catalog and username to the AI for contextual selection
-        const selectedRules = await this.selectRelevantRules(safeDesc, ruleCatalog, username);
+        // 1. DYNAMICALLY DETECT MODIFIERS USING AI
+        // The AI analyzes the raw context and identifies structured modifier rules.
+        const detectedMods = await this.detectRelevantModifiers(safeDesc, worldState, username);
         
-        // 2. CALCULATE BONUS FROM SELECTED RULES
-        const bonusResult = this.calculateBonusFromRules(selectedRules, username);
+        // 2. CALCULATE BONUS FROM DETECTED MODS (System Math)
+        const bonusResult = this.calculateBonusFromAI(detectedMods, username);
         const globalBonus = bonusResult.total;
         
         // Apply manual modifier if present, added to the global bonus
@@ -667,7 +674,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
         safeThresholds = this.enforceRealisticThresholds(safeThresholds, difficulty);
 
         const roll = Math.floor(Math.random() * 1001);
-        const outcome = this.determineOutcome(roll, safeThresholds);
+        const outcome = this.determineOutcome(roll, safeThresholds, difficulty);
         return {
           name: safeName,
           description: safeDesc,
@@ -675,7 +682,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
           roll: roll,
           thresholds: safeThresholds,
           math: mathBreakdown,
-          rules: selectedRules
+          rules: detectedMods.map(m => `${m.label}: ${m.math} (${m.reasoning})`)
         };
       }));
 
@@ -783,7 +790,7 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
     throw new Error("Failed to extract valid JSON");
   }
 
-  private determineOutcome(roll: number, thresholds: { [outcome: string]: number }): string {
+  private determineOutcome(roll: number, thresholds: { [outcome: string]: number }, difficulty: string = 'moderate'): string {
     if (!thresholds || typeof thresholds !== 'object') {
       return roll >= 500 ? "Success" : "Failure";
     }
@@ -796,10 +803,34 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
     }
 
     // Below all thresholds: determine Critical Failure vs Failure
-    // Critical Failure on very low rolls (bottom 10% of the failure range)
     const lowestThreshold = sorted.length > 0 ? sorted[sorted.length - 1][1] : 500;
-    const critFailCutoff = Math.floor(lowestThreshold * 0.10);
-    if (roll <= critFailCutoff && lowestThreshold >= 200) {
+    
+    // Check if the AI explicitly provided a "Failure" tier
+    // If it did, and we are below all thresholds (including Failure), then it's a Critical Failure
+    const hasExplicitFailure = Object.keys(thresholds).some(k => k.toLowerCase() === 'failure');
+    if (hasExplicitFailure) {
+      return "Critical Failure";
+    }
+
+    // Dynamic Critical Failure Range based on Difficulty
+    // The higher the difficulty, the larger the proportion of the failure range that is "critical"
+    const critFailPercentages: { [key: string]: number } = {
+      'trivial': 0.02,        // 2% of failure range
+      'easy': 0.05,           // 5% of failure range
+      'moderate': 0.10,       // 10% of failure range
+      'hard': 0.20,           // 20% of failure range
+      'very_hard': 0.35,      // 35% of failure range
+      'near_impossible': 0.50 // 50% of failure range
+    };
+
+    const percentage = critFailPercentages[difficulty] ?? 0.10;
+    const critFailCutoff = Math.floor(lowestThreshold * percentage);
+
+    // Context-based tweak: If difficulty is hard or higher, ensure at least a small floor
+    const minFloor = (difficulty === 'hard' || difficulty === 'very_hard' || difficulty === 'near_impossible') ? 50 : 0;
+    const finalCutoff = Math.max(minFloor, critFailCutoff);
+
+    if (roll <= finalCutoff) {
       return "Critical Failure";
     }
     return "Failure";
@@ -969,86 +1000,71 @@ ${username ? `${mapScreenshot ? '10' : '9'}. Check your ACTIVE CHARACTER FILES. 
    * Scans all files and extracts lines that appear to be mathematical rules, stats, or modifiers.
    * If a username is provided, it excludes character files of other players.
    */
-  private catalogRules(username?: string): string[] {
+  /**
+   * Provides a structured view of all relevant world and character files 
+   * for the AI to analyze for checks.
+   */
+  private getWorldContextForAI(username?: string): string {
     const files = this.fs.getAll();
-    const catalogSet = new Set<string>();
     const uLower = username?.toLowerCase();
+    const contextBlocks: string[] = [];
 
     for (const [filename, content] of Object.entries(files)) {
       // Multiplayer protection: Ignore other players' character files
-      // Character files are "Name-Username.txt"
       if (uLower && filename.endsWith('.txt') && filename.includes('-')) {
         const parts = filename.split('-');
         const fileUsername = parts[parts.length - 1].replace('.txt', '').toLowerCase();
         if (fileUsername !== uLower && this.isKnownPlayer(fileUsername)) {
-          // This is another player's file, skip it
           continue;
         }
       }
 
-      const lines = content.split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        // Skip empty or purely narrative lines
-        if (!trimmed || trimmed.length < 5) continue;
+      // Skip large binary-like files or the map (AI already has map context)
+      if (filename === 'CurrentMap.json') continue;
 
-        // Pattern-based extraction:
-        // - Key: Value
-        // - [+-]X% to [Stat]
-        // - [Stat]: base + ...
-        // - Status: [ID]
-        const isStat = /^(?:[\s\-*>]|\d+\.)*\s*\w+\s*[:=]\s*(.*)$/.test(trimmed);
-        const isMod = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|grant|)\s*(\w+)/i.test(trimmed);
-        const isEffect = /\[Status:([\w-]+)/i.test(trimmed);
-
-        if (isStat || isMod || isEffect) {
-          catalogSet.add(`[File: ${filename}] ${trimmed}`);
-        }
-      }
+      contextBlocks.push(`=== FILE: ${filename} ===\n${content}`);
     }
-    return Array.from(catalogSet);
+    return contextBlocks.join('\n\n');
   }
 
   /**
-   * Uses AI to dynamically select which rules from the catalog actually apply to the given action.
+   * Uses AI to dynamically detect which rules apply to the given action.
+   * Instead of just picking strings, the AI interprets context and returns structured math bits.
    */
-  private async selectRelevantRules(actionDesc: string, catalog: string[], username?: string): Promise<string[]> {
-    if (catalog.length === 0) return [];
+  private async detectRelevantModifiers(actionDesc: string, worldContext: string, username?: string): Promise<DetectedModifier[]> {
+    if (!worldContext) return [];
 
-    const selectionPrompt = `TASK: Select all RELEVANT world rules, character stats, and item modifiers for the action: "${actionDesc}".
-    ${username ? `ACTOR: The player performing this action is "${username}".` : ''}
+    const detectionPrompt = `TASK: Analyze the provided World Context and identify ALL modifiers, character stats, active conditions, and world rules that logically affect this action: "${actionDesc}".
+    ${username ? `ACTOR: The player "${username}".` : ''}
     
-Rules Catalog:
-${catalog.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+World Context:
+${worldContext}
 
 INSTRUCTIONS:
-- Identify rules that mathematically should affect the outcome of this specific action.
-- Only select rules belonging to the ACTOR or general World/Item rules.
-- Examples: 
-  * "Stabbing" -> Apply Strength, Weapon sharp bonuses, etc.
-  * "Sneaking" -> Apply Agility, Stealth bonuses, Boots effects, etc.
-  * "Climbing" -> Apply Strength/Agility, Grip bonuses, Weather effects.
-- Return ONLY a JSON array of the Rule Text strings (exactly as they appear in the catalog) that apply.
-- If NO rules apply, return [].
-- Return ONLY the JSON array.`;
+1. Identify every factor that mathematically influences the outcome based on CONTEXT (not just literal matches).
+2. For each factor, extract the "Mathematical Essence" exactly as written in the text.
+   - For stats/formulas (e.g. "Strength: base + 10%(1000)"), extract the math after the colon.
+   - For flat bonuses (e.g. "+5 to hit"), extract the value.
+   - For status effects (e.g. "[Status:Bleeding: -10]"), extract the value.
+3. Only include factors that apply to the ACTOR or the WORLD generally.
+4. Return a JSON array of objects with this exact structure:
+   {
+     "label": "Short name for the breakdown",
+     "math": "The numeric expression or variable name",
+     "origin_file": "The filename where this was found",
+     "reasoning": "Brief explanation of why this applies to this specific action"
+   }
+5. Return ONLY the JSON array. If nothing applies, return [].`;
 
     try {
-      const response = await this.callAI(selectionPrompt);
-      // Clean up markdown code blocks if any
+      const response = await this.callAI(detectionPrompt);
       const cleaned = response.replace(/```json/g, '').replace(/```/g, '').trim();
-      const selected = JSON.parse(cleaned);
-      if (Array.isArray(selected)) {
-        // Map back to the original rule text, ignoring the "[File: ...]" prefix for the search if needed
-        // but the prompt asked for the exact text, so it should work.
-        return selected.map(s => {
-          // AI might return just the rule part or include the prefix. 
-          // We'll normalize by finding the best match in the catalog.
-          const match = catalog.find(c => c.includes(s) || s.includes(c));
-          return match || s;
-        });
+      const detected = JSON.parse(cleaned);
+      if (Array.isArray(detected)) {
+        return detected;
       }
     } catch (e) {
-      console.warn("AI rule selection failed, falling back to empty rules.", e);
+      console.warn("AI modifier detection failed.", e);
     }
     return [];
   }
@@ -1056,102 +1072,75 @@ INSTRUCTIONS:
   /**
    * Calculates numeric bonus from a specific set of AI-selected rule strings.
    */
-  private calculateBonusFromRules(selectedRules: string[], username?: string): { total: number, breakdown: string } {
+  /**
+   * Calculates numeric bonus from AI-detected structured modifiers.
+   * Resolves formulas and variables using the system's math engine.
+   */
+  private calculateBonusFromAI(detected: DetectedModifier[], username?: string): { total: number, breakdown: string } {
     const files = this.fs.getAll();
     let totalBonus = 0;
     const breakdownParts: string[] = [];
     const resolvedVarsInFormulas = new Set<string>();
 
-    // Identify player's char file for variable priority
     const charFile = username ? this.fs.list().find(f => f.toLowerCase().includes(username.toLowerCase()) && f.endsWith('.txt')) : undefined;
-
-    // We process global modifiers first, as they are often more specific "overrides" or "buffs"
-    // and might help us decide which secondary stats are relevant.
     
-    const handledRuleIndexes = new Set<number>();
+    // Sort to process formulas (which define base stats) before modifiers that might add to them
+    const sorted = [...detected].sort((a, b) => {
+      const aIsFormula = a.math.includes('base') || a.math.includes('+') || a.math.includes('%');
+      const bIsFormula = b.math.includes('base') || b.math.includes('+') || b.math.includes('%');
+      if (aIsFormula && !bIsFormula) return -1;
+      if (!aIsFormula && bIsFormula) return 1;
+      return 0;
+    });
 
-    // 1. Process Complex Formulas FIRST (Stat Definitions)
-    for (let i = 0; i < selectedRules.length; i++) {
-      const rulePrefixed = selectedRules[i];
-      // Extract file origin: "[File: filename.txt] ..."
-      const fileMatch = rulePrefixed.match(/^\[File: (.*?)\]/);
-      const originFile = fileMatch ? fileMatch[1] : undefined;
+    for (const mod of sorted) {
+      const rhs = mod.math.trim();
       
-      const rule = rulePrefixed.replace(/^\[File: .*?\] /, '');
-      const lLower = rule.toLowerCase();
-
-      // A. Direct stat/action formula (e.g., "Agility: base + 15%(1000) + ...")
-      // We look for a key-value pattern where the RHS looks like a formula (not just a single modifier)
-      const statLineMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*([\w ]+)\s*[:=]\s*(.*)$/);
-      if (statLineMatch) {
-        const statName = statLineMatch[1].trim();
-        const rhs = statLineMatch[2].trim();
-        
-        // A "formula" must have 'base', a '+' not at the start, or at least two non-empty terms
-        const terms = rhs.split('+').filter(t => t.trim().length > 0);
-        const isTrueFormula = rhs.includes('base') || (terms.length > 1) || (rhs.indexOf('+') > 0);
-        
-        if (isTrueFormula) {
-          // Multi-player Priority: When parsing a formula, we look for variables in:
-          // 1. The origin file (where the formula was defined)
-          // 2. The player's character file
-          const preferredFiles = [originFile, charFile].filter((f): f is string => !!f);
-          const formulaBonus = this.parseFormula(rule, files, preferredFiles);
+      // Determine if it's a complex formula (system math required)
+      const isFormula = rhs.includes('base') || (rhs.split('+').length > 1);
+      
+      if (isFormula) {
+        const preferredFiles = [mod.origin_file, charFile].filter((f): f is string => !!f);
+        const formulaBonus = this.executeMath(rhs, files, preferredFiles);
+        if (formulaBonus !== 0) {
           totalBonus += formulaBonus;
-          if (formulaBonus !== 0) {
-            breakdownParts.push(`${statName}(Base): ${formulaBonus > 0 ? '+' : ''}${formulaBonus}`);
-          }
-          
-          handledRuleIndexes.add(i);
-
-          // Track which variables were used in this formula to skip them later
-          const parts = rhs.split('+').map(p => p.trim().toLowerCase());
-          for (const p of parts) {
-            if (/^\w+$/.test(p) && p !== 'base') resolvedVarsInFormulas.add(p);
-          }
+          breakdownParts.push(`${mod.label}: ${formulaBonus > 0 ? '+' : ''}${formulaBonus}`);
         }
-      }
-    }
-
-    // 2. Process Global Modifiers and Secondary Variables
-    for (let i = 0; i < selectedRules.length; i++) {
-      if (handledRuleIndexes.has(i)) continue;
-
-      const rulePrefixed = selectedRules[i];
-      const rule = rulePrefixed.replace(/^\[File: .*?\] /, '');
-      const lLower = rule.toLowerCase();
-      
-      const globalModRegex = /([+-]\s*\d+(?:\s*%\s*(?:\(\s*1000\s*\))?)?)\s*(?:to|for|on|grant|toward|)\s*([\w ]+)/i;
-      const gm = rule.match(globalModRegex);
-      if (gm) {
-        const val = this.parseValue(gm[1]);
-        if (val !== 0) {
-          totalBonus += val;
-          let label = rule.split(':')[0]?.trim();
-          if (!label || label.toLowerCase() === lLower) label = gm[2].trim();
-          breakdownParts.push(`${label}: ${val > 0 ? '+' : ''}${val}`);
-        }
-        continue;
-      }
-
-      // C. Simple variables (e.g., "training: 15")
-      const varMatch = lLower.match(/^(?:[\s\-*>]|\d+\.)*\s*([\w ]+)\s*[:=]\s*([+-]?\d+)$/);
-      if (varMatch) {
-        const varName = varMatch[1].trim();
-        if (resolvedVarsInFormulas.has(varName)) continue; // Skip double-counting
         
-        const val = this.parseValue(varMatch[2]);
+        // Track variables consumed by this formula to avoid double counting
+        const parts = rhs.split('+').map(p => p.trim().toLowerCase());
+        for (const p of parts) {
+          if (/^\w+$/.test(p) && p !== 'base') resolvedVarsInFormulas.add(p);
+        }
+      } else {
+        // Simple value or variable
+        const vLower = rhs.toLowerCase();
+        if (resolvedVarsInFormulas.has(vLower)) continue;
+
+        const val = this.parseValue(rhs);
         if (val !== 0) {
           totalBonus += val;
-          breakdownParts.push(`${varName}: ${val > 0 ? '+' : ''}${val}`);
+          breakdownParts.push(`${mod.label}: ${val > 0 ? '+' : ''}${val}`);
+        } else if (/^\w+$/.test(rhs)) {
+          // Might be a variable reference
+          const resolved = this.resolveVariable(rhs, files, [mod.origin_file, charFile].filter((f): f is string => !!f));
+          if (resolved !== 0) {
+            totalBonus += resolved;
+            breakdownParts.push(`${mod.label}: ${resolved > 0 ? '+' : ''}${resolved}`);
+          }
         }
-        continue;
       }
-      
-      console.log(`DEBUG: Rule unhandled: "${rule}"`);
     }
 
     return { total: totalBonus, breakdown: breakdownParts.join(' + ').replace(/\+ -/g, '- ') };
+  }
+
+  /**
+   * Wrapper for parseFormula that works directly on the RHS/Math portion
+   */
+  private executeMath(mathExpr: string, allFiles: { [name: string]: string }, preferredFiles?: string[]): number {
+    // parseFormula expects "Key: formula", so we give it a dummy key
+    return this.parseFormula(`eval: ${mathExpr}`, allFiles, preferredFiles);
   }
 
 
@@ -1167,28 +1156,39 @@ INSTRUCTIONS:
    */
   private parseFormula(formulaLine: string, allFiles: { [name: string]: string }, preferredFiles?: string[]): number {
     const rhs = formulaLine.split(/[:=]/)[1] || '';
-    const parts = rhs.split('+').map(p => p.trim());
+    // Split by '+' but IGNORE '+' inside brackets/parentheses for now
+    const parts = rhs.split(/\+(?![^\[]*\])/).map(p => p.trim());
     let bonus = 0;
 
     for (const part of parts) {
       if (part.toLowerCase().includes('base')) continue;
       
-      // Handle percentage of 1000: "15%(1000)"
-      const pctMatch = part.match(/(\d+)\s*%\s*\(\s*1000\s*\)/);
+      // Handle percentage of 1000: "15%(1000)" or just "15%"
+      const pctMatch = part.match(/([+-]?\d+)\s*%\s*(\(\s*1000\s*\))?/);
       if (pctMatch) {
         bonus += (parseInt(pctMatch[1]) / 100) * 1000;
         continue;
       }
 
-      // Handle raw numbers
+      // Handle raw numbers (including negative)
       if (/^[+-]?\s*\d+$/.test(part)) {
         bonus += parseInt(part.replace(/\s+/g, ''));
         continue;
       }
 
-      // Handle variable references (e.g., "suit_mobility_bonus")
-      if (/^\w+$/.test(part)) {
-        bonus += this.resolveVariable(part, allFiles, preferredFiles);
+      // Handle Bracketed Status/Effect bonuses: [Status:NAME: +X]
+      const bracketMatch = part.match(/\[(?:Status|Condition|Effect):.*?[:=]\s*([+-]?\s*\d+.*?)\]/i);
+      if (bracketMatch) {
+        bonus += this.parseValue(bracketMatch[1]);
+        continue;
+      }
+
+      // Handle variable references (e.g., "suit_mobility_bonus" or "armor bonus")
+      // Allow spaces and underscores
+      if (/^[\w\s]+$/.test(part)) {
+        const cleanVar = part.trim();
+        if (cleanVar === 'effects') continue; // skip placeholder
+        bonus += this.resolveVariable(cleanVar, allFiles, preferredFiles);
       }
     }
 
