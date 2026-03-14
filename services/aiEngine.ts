@@ -112,8 +112,9 @@ PROBABILITY ENGINE RULE (CRITICAL):
   * Stealth and Detection
   * Social manipulation (Persuasion, Intimidation, Deception)
   * Physical feats (Climbing, jumping, lifting, swimming)
-  * Magic or Technical operations with risk
-  * Resistance against effects or toxins
+  * Magic, Technical, or Psychic operations with risk
+  * Magic Focus, Concentration, or maintaining complex abilities, especially under pressure
+  * Resistance against effects, toxins, or mental influence
 - If an action should be modified by stats (e.g., Agility, Strength), you MUST define a "stat" field in the "checks" object that matches the exact stat name.
 - THE ENGINE IS DYNAMIC (CRITICAL): The backend probability engine will automatically scan ALL world files, analyze your "description" and "stat" fields, and DYNAMICALLY select every relevant mathematical modifier (including items, world rules, and character formulae) that accurately applies to that specific action context.
 - If you return "checks", your "narrative" field MUST be an empty string. You will generate the narrative in the next step once the results are provided.
@@ -355,7 +356,7 @@ CRITICAL REMINDERS:
 4. PERCEPTION AUDIT (CRITICAL): If your narrative mentions an NPC, item, or location that does not have a technical file in the "Current Files Context" above, you MUST create that file NOW. Never mention something without providing its technical definition.
 5. ACTIVE CHARACTER: ${characterFiles.length > 0 ? `Use existing file(s): ${characterFiles.join(', ')}.` : `Create NEW: "CharacterName-${username}.txt".`}
 6. FILE UPDATES: Include modified files in your 'files' JSON. You MUST update HP, Energy, and the [Effects] list in the character file if ANY physical or mental change occurs (including minor scratches, bruises, or exhaustion).
-7. PROBABILITY ENGINE: If the action involves risk or stats, return "checks" and an empty narrative string.
+7. PROBABILITY ENGINE: Use "checks" for ANY action with risk. This INCLUDES Magic Focus, Concentration, or maintaining abilities. If risk is involved, your "narrative" field MUST be an empty string.
 8. CRITICAL FAILURES: If a check results in "Critical Failure", you MUST narrate a severe, dramatic consequence (injury, loss of item, major setback) and reflect this in the character file.
 9. MATH FORMULAS ONLY: Stats in files MUST use "base probability engine + X%(1000) + effects". NEVER use dice notation like 1d6 or 1d20.
 ${mapScreenshot ? '10. A screenshot of the current map is attached. Use it to verify spatial consistency.' : ''}`;
