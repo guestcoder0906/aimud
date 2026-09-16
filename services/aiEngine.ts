@@ -408,7 +408,7 @@ export class AIEngine {
 
           // STAGE 1: TECHNICAL AUDIT (THE "THINKING" PHASE)
           const auditPrompt = `${ACTION_AUDIT_PROMPT}\n\n[WORLD CONTEXT]\n${worldContext}\n\n[SPATIAL CONTEXT]\n${spatialContext}\n\n${userHeader}Player action: ${action}`;
-          const auditRaw = await this.callAI(auditPrompt, mapScreenshot, 'gemini-3.1-flash-lite-preview');
+          const auditRaw = await this.callAI(auditPrompt, mapScreenshot, 'gemini-3.5-flash-lite');
           const audit = this.extractJSON(auditRaw);
 
           if (!audit) throw new Error("Audit failed");
@@ -461,7 +461,7 @@ CRITICAL REMINDERS:
 4. WEAPONS: Use ITEM & WEAPON TECHNICAL SCHEMA for any equipment created.
 5. STATS: Use MATH FORMULAS ONLY for stats.`;
 
-          const finalResponse = await this.handleRequest(executionPrompt, mapScreenshot, username, 'gemini-3.1-flash-lite-preview');
+          const finalResponse = await this.handleRequest(executionPrompt, mapScreenshot, username, 'gemini-3.5-flash-lite');
           
           // Post-process spatial consistency (Old map state already captured via fs.read in handleRequest/enforceSpatialConsistency)
           const latestMapRaw = this.fs.read('CurrentMap.json');
@@ -1524,7 +1524,7 @@ INSTRUCTIONS:
       }
 
       const response = await this.ai.models.generateContent({
-        model: modelName || 'gemini-3.1-flash-lite-preview',
+        model: modelName || 'gemini-3.5-flash-lite',
         contents: contents,
         config: {
           systemInstruction: SYSTEM_PROMPT,
