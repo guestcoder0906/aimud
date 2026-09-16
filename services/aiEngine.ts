@@ -36,9 +36,11 @@ DEATH & TERMINATION:
 - In your "files" output, you MUST set the character file to NULL to delete it.
 - Narrate a definitive end.
 
-FILE MINIMIZATION:
+FILE MINIMIZATION & INITIALIZATION:
 - Only include files that are NEW, MODIFIED, or DELETED.
 - DO NOT re-include unchanged files.
+- INITIAL TURN EXCEPTION: On turn 1 (or world initialization), all initial files ("WorldRules.txt", "Guide.txt", "WorldTime.txt", "CurrentMap.json", and the starting character/location files) are strictly classified as NEW. You MUST generate and include every single one in the "files" object. Never omit them under the assumption they exist elsewhere.
+- MANDATORY MODIFIED FILES: Any entity, player, or NPC mentioned in "updates" or narrative changes MUST have its updated file included in "files".
 
 MAP DATA INTEGRITY (CRITICAL):
 - You MUST include "CurrentMap.json" in your "files" object if any entity moves, a location is created, or an object's state changes.
