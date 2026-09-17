@@ -87,12 +87,19 @@ JSON RESPONSE FORMAT:
   "files": { "FileName.txt": "Content", "OldFile.txt": null },
   "updates": [{ "text": "Health -10", "value": -10 }],
   "checks": [
-    { "name": "Magic Focus", "description": "Maintaining the focus while under threat", "difficulty": "moderate", "stat": "willpower" },
-    { "name": "Strength", "description": "Lifting the heavy gate", "difficulty": "hard", "stat": "strength" }
+    { "name": "Magic Focus", "description": "Maintaining the focus while under threat", "difficulty": "moderate", "stat": "willpower" }
   ],
   "recommendations": ["Action A", "Action B"],
   "gameOver": false
 }
+
+CRITICAL JSON SYNTAX & BRACKET INTEGRITY (READ CAREFULLY):
+- The "files" field MUST ALWAYS be a JSON Object enclosed in curly braces { ... }, NEVER a square bracket array [ ... ].
+- Even if "CurrentMap.json" or file contents contain square brackets ([pages], [STATUS]), you MUST close "files" with a curly brace (}).
+- NEVER output "files": { ... ], "gameOver". It is a FATAL syntax corruption. Always ensure it closes cleanly as:
+  }
+},
+"gameOver": false
 
 1. Create and manage text files as the source of truth
 2. Generate world content on-demand based on player perception
@@ -517,7 +524,8 @@ CRITICAL REMINDERS:
    - CRITICAL: Do NOT omit pages for players who did not take this turn. If players are separated, return ALL pages in the "pages" array.
    - Every entity, NPC, obstacle, and player within the scale bounds of each page MUST be plotted with valid (x, y) coordinates and facing angles.
 4. WEAPONS: Use ITEM & WEAPON TECHNICAL SCHEMA for any equipment created.
-5. STATS: Use MATH FORMULAS ONLY for stats.`;
+5. STATS: Use MATH FORMULAS ONLY for stats.
+6. JSON SYNTAX: Close the "files" object with a curly brace "}" before "gameOver". NEVER close "files" with a square bracket "]".`;
 
           const finalResponse = await this.handleRequest(executionPrompt, mapScreenshot, username, 'gemini-3.5-flash-lite');
           
