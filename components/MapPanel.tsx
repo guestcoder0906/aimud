@@ -44,7 +44,6 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
         }
 
         const canvas = document.createElement('canvas');
-        // Use a reasonable resolution for the AI to read
         canvas.width = 800;
         canvas.height = 600;
         const ctx = canvas.getContext('2d');
@@ -59,7 +58,6 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
         URL.revokeObjectURL(url);
-        // Return base64 data without the data:image/png;base64, prefix
         const dataUrl = canvas.toDataURL('image/png');
         return dataUrl.split(',')[1] || null;
       } catch (e) {
@@ -69,25 +67,45 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
     }
   }));
 
-
   useEffect(() => {
     const content = fileSystem.read('CurrentMap.json');
     if (content) {
       try {
-        setMapData(JSON.parse(content));
+        const parsed = JSON.parse(content);
+        setMapData(parsed);
+
+        // Normalize pages to check if active player's page changed
+        const currentPages = parsed?.pages && Array.isArray(parsed.pages)
+          ? parsed.pages
+          : Array.isArray(parsed)
+            ? parsed
+            : (parsed?.areas ? [parsed] : []);
+
+        // Auto-switch to the page containing this active player if available
+        if (username && currentPages.length > 0) {
+          const userLower = username.toLowerCase();
+          const targetIndex = currentPages.findIndex((p: any) =>
+            p.players?.some((pl: any) => pl.username?.toLowerCase() === userLower)
+          );
+          if (targetIndex !== -1) {
+            setCurrentPageIndex(targetIndex);
+          }
+        }
       } catch (e) {
-        console.error("Failed to parse CurrentMap.json");
+        console.error("Failed to parse CurrentMap.json", e);
       }
     } else {
       setMapData(null);
     }
-  }, [fileSystem, files, syncCount]); // Re-run when files or syncCount change
+  }, [fileSystem, files, syncCount, username]);
 
+  // Robust multi-structure resolution for pages:
   let pages: any[] = [];
   if (mapData?.pages && Array.isArray(mapData.pages)) {
     pages = mapData.pages;
+  } else if (Array.isArray(mapData)) {
+    pages = mapData;
   } else if (mapData?.areas) {
-    // Backwards compatibility for single-page old format
     pages = [{ name: 'World Map', ...mapData }];
   }
 
@@ -108,7 +126,7 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
 
   if (!currentPage || !currentPage.areas) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 italic p-4 text-center">
+      <div className="flex items-center justify-center h-full text-gray-500 italic p-4 text-center bg-black">
         Map data unavailable. The AI engine is generating the world...
       </div>
     );
@@ -120,8 +138,8 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
 
     // Handle target(...)
     processed = processed.replace(/target\((.*?)\)\[(.*?)\]/gs, (match, targets, innerText) => {
-      const targetList = targets.split(',').map((t: string) => t.trim());
-      if (debugMode || targetList.includes(username)) {
+      const targetList = targets.split(',').map((t: string) => t.trim().toLowerCase());
+      if (debugMode || targetList.includes(username?.toLowerCase())) {
         return innerText;
       }
       return 'Unknown Area';
@@ -137,13 +155,13 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
     return processed;
   };
 
-  // Calculate bounds to scale the map
+  // Calculate bounds to scale the map dynamically
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   if (currentPage.areas && currentPage.areas.length > 0) {
     currentPage.areas.forEach((area: any) => {
       const parsedName = parseName(area.name);
       const isHidden = parsedName === 'Unknown Area' && !debugMode;
-      if (isHidden) return; // Skip hidden areas for bounds calculation
+      if (isHidden) return;
 
       const ax = Number(area.x) || 0;
       const ay = Number(area.y) || 0;
@@ -176,7 +194,7 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
     });
   }
 
-  // Also include players in bounds
+  // Also include players in bounds calculation
   if (currentPage.players && currentPage.players.length > 0) {
     currentPage.players.forEach((p: any) => {
       const px = Number(p.x) || 0;
@@ -188,7 +206,7 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
     });
   }
 
-  // If no visible areas, set default bounds
+  // Fallback defaults if bounds calculation yields no points
   if (minX === Infinity || isNaN(minX) || isNaN(maxX) || isNaN(minY) || isNaN(maxY)) {
     minX = 0; minY = 0; maxX = 100; maxY = 100;
   }
@@ -196,14 +214,12 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
   const mapWidth = Math.max(maxX - minX, 100);
   const mapHeight = Math.max(maxY - minY, 100);
 
-  // Center if we had to expand the width/height
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
 
   const finalMinX = cx - mapWidth / 2;
   const finalMinY = cy - mapHeight / 2;
 
-  // Add some padding
   const padding = 20;
   const viewBox = `${finalMinX - padding} ${finalMinY - padding} ${mapWidth + padding * 2} ${mapHeight + padding * 2}`;
 
@@ -261,9 +277,8 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
   };
 
   const createConePath = (x: number, y: number, facing: number, paramAngle: number, radius: number) => {
-    // Treat the angle from the AI as the total span of the vision cone
     let angle = Math.abs(paramAngle) / 2;
-    if (angle >= 180) angle = 179.99; // Prevent SVG arc vanishing on perfect circles
+    if (angle >= 180) angle = 179.99;
 
     const startAngle = (facing - angle) * Math.PI / 180;
     const endAngle = (facing + angle) * Math.PI / 180;
@@ -287,13 +302,13 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
         </div>
 
         {pages.length > 1 && (
-          <div className="flex gap-1 pointer-events-auto flex-wrap">
+          <div className="flex gap-1 pointer-events-auto flex-wrap max-w-full">
             {pages.map((p, idx) => (
               <button
                 key={idx}
                 onClick={() => setCurrentPageIndex(idx)}
                 className={`text-[10px] font-mono px-2 py-1 rounded border transition-colors ${idx === safePageIndex
-                  ? 'bg-blue-900/50 border-blue-500 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
+                  ? 'bg-blue-900/50 border-blue-500 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.3)] font-bold'
                   : 'bg-black/60 border-neutral-800 text-gray-400 hover:bg-neutral-800'
                   }`}
               >
@@ -392,6 +407,7 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
           const px = Number(player.x) || 0;
           const py = Number(player.y) || 0;
           const pfacing = Number(player.facing) || 0;
+          const isMe = String(player.username).toLowerCase() === String(username).toLowerCase();
 
           return (
             <g key={player.username || i}>
@@ -414,7 +430,7 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
               {/* Player Triangle */}
               <polygon
                 points="-4,-4 6,0 -4,4"
-                fill={String(player.username).toLowerCase() === String(username).toLowerCase() ? "#3b82f6" : "#ef4444"}
+                fill={isMe ? "#3b82f6" : "#ef4444"}
                 transform={`translate(${px}, ${py}) rotate(${pfacing})`}
               />
               <text
@@ -426,7 +442,7 @@ const MapPanel = forwardRef<MapPanelHandle, MapPanelProps>(({ fileSystem, files,
                 {player.username}
               </text>
             </g>
-          )
+          );
         })}
 
         {/* Draw Notes/Annotations */}
