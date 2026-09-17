@@ -280,6 +280,15 @@ CRITICAL FILE MANAGEMENT RULES:
 - Track unique instances: [ObjectType_ID(status)]
 - Status effects: [Status:Type_ID(Expires: TIME)]
 
+CURRENT MAP JSON FORMATTING (CRITICAL):
+- When outputting "CurrentMap.json" inside "files", its "content" field MUST be a DIRECT raw JSON Object, NOT an escaped string.
+- CORRECT:
+  "CurrentMap.json": {
+    "content": { "pages": [ ... ] },
+    "displayName": "Current Map"
+  }
+- FORBIDDEN: Do NOT write "content": "{\n \"pages\": ... }". Do NOT escape quotes with backslashes (\"). Output raw nested JSON.
+
 NARRATIVE IDENTITIES RULE (CRITICAL):
 - In the "narrative" field, you MUST refer to players ONLY by their Character Name (found in their "CharacterName-USERNAME.txt" file) and use the gender/pronouns defined in that character's biometrics section.
 - NEVER use a player's account username (e.g., the name passed in metadata) in the narrative.
@@ -700,6 +709,9 @@ CRITICAL REMINDERS:
       // Unquoted keys fix
       s = s.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
 
+      // Fix inner stringified JSON keys where backslash was dropped before quote-colon: \"key": -> \"key\":
+      s = s.replace(/\\\"([a-zA-Z0-9_-]+)":/g, '\\"$1\\":');
+      
       // Basic brace balancing
       let delta = 0;
       for (const char of s) {
