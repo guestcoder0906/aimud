@@ -21,7 +21,7 @@ export class FileSystem {
         this.metadata = JSON.parse(storedMeta);
       }
     } catch (e) {
-      console.error('Failed to load files:', e);
+      console.error('Failed to load files from storage:', e);
     }
   }
 
@@ -29,13 +29,50 @@ export class FileSystem {
     try {
       localStorage.setItem(this.STORAGE_KEY_FILES, JSON.stringify(this.files));
       localStorage.setItem(this.STORAGE_KEY_META, JSON.stringify(this.metadata));
-    } catch (e) {
-      console.error('Failed to save files:', e);
+    } catch (e: any) {
+      if (e.name === 'QuotaExceededError' || e.code === 22) {
+        console.warn('Storage quota exceeded. Evicting volatile cache entries...');
+        this.pruneVolatileStorage();
+      } else {
+        console.error('Failed to save files:', e);
+      }
     }
   }
 
-  write(filename: string, content: string, displayName: string | null = null) {
-    this.files[filename] = content;
+  /**
+   * If local storage fills up (due to multi-page maps or rich logs),
+   * evicts transient snapshots while strictly protecting core world and player files.
+   */
+  private pruneVolatileStorage() {
+    try {
+      const protectedFiles = new Set(['WorldRules.txt', 'Guide.txt', 'WorldTime.txt', 'CurrentMap.json']);
+      
+      // Retain player files
+      for (const key of Object.keys(this.files)) {
+        if (key.endsWith('.txt') && key.includes('-')) {
+          protectedFiles.add(key);
+        }
+      }
+
+      // Evict old debug logs or temporary snapshots if any exist
+      for (const key of Object.keys(this.files)) {
+        if (!protectedFiles.has(key) && (key.startsWith('debug_') || key.startsWith('temp_'))) {
+          delete this.files[key];
+          delete this.metadata[key];
+        }
+      }
+
+      localStorage.setItem(this.STORAGE_KEY_FILES, JSON.stringify(this.files));
+      localStorage.setItem(this.STORAGE_KEY_META, JSON.stringify(this.metadata));
+    } catch (e) {
+      console.error('Critical: Storage quota could not be resolved.', e);
+    }
+  }
+
+  write(filename: string, content: string | any, displayName: string | null = null) {
+    const stringified = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    this.files[filename] = stringified;
+
     if (displayName) {
       this.metadata[filename] = { displayName };
     } else if (!this.metadata[filename]) {
@@ -45,7 +82,7 @@ export class FileSystem {
   }
 
   private generateDisplayName(filename: string): string {
-    let name = filename.replace(/\.txt$/, '');
+    let name = filename.replace(/\.(txt|json)$/, '');
     name = name.replace(/_/g, ' ');
     name = name.replace(/\s+\d+$/, '');
     return name;
@@ -53,13 +90,8 @@ export class FileSystem {
 
   getDisplayName(filename: string): string {
     let base = filename.replace(/\.txt|\.json/g, '');
-
-    // Remove target() syntax
-    base = base.replace(/target\(.*?\)(?:\[(.*?)\])?/g, (match, inner) => inner || '');
-
-    // Remove hide[] syntax
+    base = base.replace(/target\(.*?\)(?:\[(.*?)\])?/g, (_, inner) => inner || '');
     base = base.replace(/hide\[(.*?)\]/g, '$1');
-
     return base.trim() || filename;
   }
 
@@ -85,13 +117,14 @@ export class FileSystem {
     return { ...this.files };
   }
 
-  exportState(): { files: FileMap, metadata: FileMetadata } {
+  exportState(): { files: FileMap; metadata: FileMetadata } {
     return { files: { ...this.files }, metadata: { ...this.metadata } };
   }
 
-  importState(state: { files: FileMap, metadata: FileMetadata }) {
-    this.files = state.files;
-    this.metadata = state.metadata;
+  importState(state: { files: FileMap; metadata: FileMetadata }) {
+    if (!state) return;
+    this.files = { ...(state.files || {}) };
+    this.metadata = { ...(state.metadata || {}) };
     this.saveToStorage();
   }
 
@@ -103,15 +136,17 @@ export class FileSystem {
   }
 
   findFileByReference(ref: string): string | null {
+    if (!ref) return null;
     if (this.exists(ref)) return ref;
     if (this.exists(ref + '.txt')) return ref + '.txt';
 
-    const refLower = ref.toLowerCase();
+    const refLower = ref.toLowerCase().trim();
     const refSlug = refLower.replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 
     // 1. Case-insensitive exact match on filename
     for (const filename of Object.keys(this.files)) {
-      if (filename.toLowerCase() === refLower || filename.toLowerCase() === refLower + '.txt') {
+      const fLower = filename.toLowerCase();
+      if (fLower === refLower || fLower === `${refLower}.txt`) {
         return filename;
       }
     }
@@ -126,33 +161,26 @@ export class FileSystem {
     // 3. Slugified match on filename
     for (const filename of Object.keys(this.files)) {
       const fileSlug = filename.toLowerCase().replace(/\.txt$/, '').replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-      if (fileSlug === refSlug) {
+      if (fileSlug === refSlug && refSlug.length > 2) {
         return filename;
       }
     }
 
-    // 4. Partial match on display name
+    // 4. Safe partial match on display name
     for (const [filename, meta] of Object.entries(this.metadata)) {
       if (meta.displayName) {
         const displayLower = meta.displayName.toLowerCase();
-        if (displayLower.includes(refLower) || (displayLower.length >= 3 && refLower.includes(displayLower))) {
+        if (displayLower === refLower) return filename;
+        if (refLower.length >= 4 && displayLower.includes(refLower)) {
           return filename;
         }
       }
     }
 
-    // 5. Partial match on filename
+    // 5. Safe partial match on filename
     for (const filename of Object.keys(this.files)) {
-      const fileLower = filename.toLowerCase();
-      const nameWithoutExt = fileLower.replace(/\.txt$/, '');
-      if (fileLower.includes(refLower) || (nameWithoutExt.length >= 3 && refLower.includes(nameWithoutExt))) {
-        return filename;
-      }
-    }
-
-    // 6. Full text search as fallback
-    for (const [filename, content] of Object.entries(this.files)) {
-      if (typeof content === 'string' && content.toLowerCase().includes(refLower)) {
+      const nameWithoutExt = filename.toLowerCase().replace(/\.(txt|json)$/, '');
+      if (refLower.length >= 4 && nameWithoutExt.includes(refLower)) {
         return filename;
       }
     }
