@@ -16,13 +16,33 @@ The world content is never pre-made but is generated on demand through a percept
 
 When the player inputs a command, the system runs a rigorous verification cycle, cross-referencing the action against the "World Rules" to see if it is physically possible and the "Player" file to see if they have the stamina, items, or status to perform it, rejecting impossible actions or narrating them as failures based on the character, environment, world effects, statuses, and luck. 
 
-TIME ENGINE:
-- You MUST calculate exact time duration in seconds by referencing a standardized Time Cost Table within the rules.
-- Update "World Time" (WorldTime.txt) which functions as the absolute global variable. 
-- FORMAT: "H:MM:SS AM/PM - Month DD, YYYY" (e.g., 2:32:16 PM - Feb 10, 2026).
-- Set the initial time/year dynamically based on the genre (e.g., 2076 for Cyberpunk, 1944 for WW2, 1024 for Fantasy).
-- CRITICAL: Time costs are for the player's DURATION of action. They are NEVER mathematical modifiers for success or failure in the Probability Engine.
-- Evaluates duration and possess the autonomy to interrupt the player's action if a significant event occurs within that timeframe.
+TIME ENGINE & TEMPORAL DISPLACEMENT:
+- Standard Format: "H:MM:SS AM/PM - Month DD, YYYY" (e.g., 2:32:16 PM - Feb 10, 2026).
+- Set initial time and baseline epoch dynamically based on the starting genre (e.g., 2076 for Cyberpunk, 1944 for WW2, 1024 for Fantasy).
+- Standard Actions: Calculate exact action duration in seconds using the Time Cost Table in WorldRules.txt and advance the active current time. Time costs are action durations, NEVER probability modifiers.
+
+TEMPORAL DISPLACEMENT RULES (CRITICAL):
+- When characters time travel, do NOT overwrite or discard their timeline of origin.
+- "WorldTime.txt" is the absolute temporal master file. It MUST maintain both active and anchor timelines using this exact structure:
+
+[CURRENT ACTIVE TIME]
+- Epoch: (e.g., "Feudal Japan", "Victorian London", "Modern Era", "Distant Future")
+- Timestamp: H:MM:SS AM/PM - Month DD, YYYY
+- Temporal State: (e.g., "Native", "Displaced - Past", "Displaced - Future")
+
+[ANCHOR / ORIGIN TIMELINE]
+- Anchor Epoch: (e.g., "Modern Baseline")
+- Anchor Timestamp: H:MM:SS AM/PM - Month DD, YYYY (The exact frozen or progressing moment of departure)
+- Anchor Flow Mode: [Frozen | Parallel-Progressing] (Defines whether the home timeline advances while away)
+
+[TEMPORAL LOG & DIVERGENCE]
+- Active Era Coordinates: (Relative offset, e.g., -642 Years, +120 Years, or Specific Era ID)
+- Previous Checkpoints: List of prior departure timestamps and locations before consecutive jumps.
+
+- ENGINE SYNCHRONIZATION:
+  * "Current Active Time" represents the local time where characters currently exist. Advance this timestamp with standard action time costs.
+  * If the party returns to their original timeline, swap "Current Active Time" back to the "Anchor Timestamp" (plus any parallel duration, if applicable) and clear or re-anchor the displaced state.
+  * Status effects must be evaluated against the timeline where they were inflicted unless defined as biological/internal to the character.
 
 MECHANICS & PERSISTENCE:
 - Temporary status effects use "Definition Files" and "Active Instance" tags with precise "[Status:NAME(Expires: TIMESTAMP)]" syntax.
@@ -42,10 +62,24 @@ FILE MINIMIZATION & INITIALIZATION:
 - INITIAL TURN EXCEPTION: On turn 1 (or world initialization), all initial files ("WorldRules.txt", "Guide.txt", "WorldTime.txt", "CurrentMap.json", and the starting character/location files) are strictly classified as NEW. You MUST generate and include every single one in the "files" object. Never omit them under the assumption they exist elsewhere.
 - MANDATORY MODIFIED FILES: Any entity, player, or NPC mentioned in "updates" or narrative changes MUST have its updated file included in "files".
 
-MAP DATA INTEGRITY (CRITICAL):
-- You MUST include "CurrentMap.json" in your "files" object if any entity moves, a location is created, or an object's state changes.
-- Never delete the map. If you forget to include it, the game world becomes spatially corrupted.
-- The map is the ONLY master record of coordinates.
+MAP DATA INTEGRITY & MULTI-PAGE SEPARATION (CRITICAL):
+- You MUST output the complete, updated "CurrentMap.json" file in your "files" object on EVERY turn without exception.
+- NEVER delete or omit existing map pages. If players are split across multiple zones, dungeons, or time periods, "CurrentMap.json" MUST contain ALL active pages simultaneously in the "pages" array.
+- MULTI-PAGE SPLIT RULE:
+  * Single Page: When players are co-located within the same region or vicinity.
+  * Distinct Pages: The exact moment players separate geographically (e.g., different cities, surface vs. dungeon, or different time eras), generate or maintain separate page objects inside "pages".
+  * Active Players: Every active player MUST be accounted for on their respective page's 'players' array. Never lose track of a player's coordinates.
+
+MANDATORY MAP GENERATION & POPULATION RULES:
+- FULL ENTITY REGISTRATION: Every single entity within map bounds MUST be present:
+  * All active player characters on that page (in 'players' array).
+  * Every visible, sensed, or known NPC, enemy, and ally (in 'areas' array with type='npc'). If 3 bandits are present, there MUST be 3 distinct NPC entries.
+  * Every interactive object, structure, vehicle, hazard, container, or dynamic element (using type: 'furniture', 'terminal', 'hazard', 'treasure', etc.).
+  * Every airborne projectile with travel time > 1.0s (type='projectile').
+- DYNAMIC SYNCHRONIZATION:
+  * Facing Angle: MUST update to face the player's primary target or movement heading (facing = atan2(targetY - playerY, targetX - playerX) * 180 / PI).
+  * Vision Cones: 'detailedRange' and 'maxRange' MUST update dynamically if illumination, weather, or perception stats change.
+  * Scale Alignment: All element boundaries ('width', 'height', 'radius', 'points') and positions (x, y) must match the page's declared 'scale'.
 
 JSON RESPONSE FORMAT:
 {
@@ -330,7 +364,8 @@ INSTRUCTIONS:
 2. AUDIT FOR ENTITIES: List every individual NPC, group of NPCs, Weapon, Item, or Location mentioned that does NOT have a file in context.
 3. AUDIT FOR MAP: Determine if the player moved or the environment changed.
 4. DETECT MODIFIERS: For any check identified, scan the context for mathematical modifiers (stats, items, rules, effects).
-
+5. AUDIT FOR TEMPORAL SHIFT, SPATIAL SPLIT, & MAP PAGES: Detect if the action causes time travel, dimensional slips, or timeline returns. Specify destination time/year, anchor origin time, and whether WorldTime.txt requires temporal re-anchoring. Spatial splits & map pages: Determine whether players are together or geographically separated across different locations, levels, or timelines. Verify which map page(s) must be created, updated, or preserved to prevent data loss. List all NPCs, entities, hazards, and projectiles that must appear on the updated page(s).
+   
 OUTPUT FORMAT (Strict JSON only):
 {
   "intent": "Brief description of what the player is doing",
@@ -345,6 +380,20 @@ OUTPUT FORMAT (Strict JSON only):
       ]
     }
   ],
+  "temporalShift": {
+    "isTimeTravel": true,
+    "destinationEpoch": "Era / Year",
+    "destinationTimestamp": "H:MM:SS AM/PM - Month DD, YYYY",
+    "storeAnchorTime": "H:MM:SS AM/PM - Month DD, YYYY",
+    "notes": "Action traveled back to 1888; preserve modern departure time in Anchor block."
+  },
+  "mapAudit": {
+    "requiresUpdate": true,
+    "isMultiPage": true,
+    "activePages": ["Page_1_Surface", "Page_2_Underground"],
+    "entitiesToPlace": ["Player_A", "Player_B", "Bandit_1", "Bandit_2", "Chest_01"],
+    "spatialNotes": "Player_B entered dungeon; must create new page while preserving surface page for Player_A."
+  },
   "filesToCreate": ["List of filenames to immediately generate"],
   "filesToUpdate": ["List of filenames that must be modified (Player, NPCs, etc)"],
   "mapUpdateRequired": true,
@@ -385,7 +434,7 @@ export class AIEngine {
             ? `CRITICAL: You MUST also create a highly detailed, extensive character file for player "${username}" during this initialization. If the prompt doesn't specify their character traits, generate a highly-varied random character (class, appearance, background, name) that fits the starting context. The file MUST be named EXACTLY "CharacterName-${username}.txt" (e.g. "Legolas-${username}.txt").`
             : "CRITICAL: DO NOT create any player character files during this initialization phase. Players will provide their character descriptions separately later. You MUST NOT return any file named with \"CharacterName-USERNAME.txt\" format during this world generation phase. Wait for the explicit character prompt next.";
 
-          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".\nCRITICAL: Any magic, abilities, or spells MUST be highly specific with strict limits, energy costs, ranges, and target caps. Vague "magic" is completely unacceptable.`;
+          const prompt = `Initialize world: ${startingPrompt}\n\nRemember: PROBABILITY ENGINE RULE (CRITICAL). Create highly detailed, extensive, and long files for the starting world (CurrentMap.json, WorldRules.txt, Guide.txt, WorldTime.txt, and any initial locations/NPCs). ${charRequirement} Ensure all stats use the new dynamic probability engine modifier format (e.g., "agility: base probability engine + 5%(1000) + effects") and armor uses thresholds. If the initialization involves any uncertain event, return "checks".\nCRITICAL: Any magic, abilities, or spells MUST be highly specific with strict limits, energy costs, ranges, and target caps. Vague "magic" is completely unacceptable. Initialize WorldTime.txt containing both [CURRENT ACTIVE TIME] and [ANCHOR / ORIGIN TIMELINE] with identical starting timestamps and Anchor Flow Mode set to Frozen.`;
           const res = await this.handleRequest(prompt, undefined, username);
           resolve(res);
         } catch (e) {
@@ -453,13 +502,20 @@ export class AIEngine {
             ).join(' ');
           }
 
-          // STAGE 3: FINAL IMPLEMENTATION (THE "ACTION" PHASE)
-          const executionPrompt = `Current Files Context:\n${worldContext}\n\n${spatialContext}\n\n${userHeader}Player action: ${action}\n\nTECHNICAL PLAN (Follow strictly):\n1. Resolve these checks: ${resolvedCheckReport || "None"}\n2. Create these files immediately: ${audit.filesToCreate?.join(', ') || "None"}\n3. Update these files: ${audit.filesToUpdate?.join(', ') || "None"}\n4. Map Update Required: ${audit.mapUpdateRequired}\n\nProcess this action based on the technical plan. Ensure every new item, weapon, or entity is created with full technical details.
+// STAGE 3: FINAL IMPLEMENTATION (THE "ACTION" PHASE)
+          const mapReq = audit.mapAudit?.requiresUpdate ?? audit.mapUpdateRequired ?? true;
+          const timeShiftNotice = audit.temporalShift?.isTimeTravel 
+            ? `TEMPORAL DISPLACEMENT DETECTED: Jump to ${audit.temporalShift.destinationEpoch} (${audit.temporalShift.destinationTimestamp}). Anchor origin time: ${audit.temporalShift.storeAnchorTime}. Update WorldTime.txt according to schema!` 
+            : "None";
+
+          const executionPrompt = `Current Files Context:\n${worldContext}\n\n${spatialContext}\n\n${userHeader}Player action: ${action}\n\nTECHNICAL PLAN (Follow strictly):\n1. Resolve these checks: ${resolvedCheckReport || "None"}\n2. Create these files immediately: ${audit.filesToCreate?.join(', ') || "None"}\n3. Update these files: ${audit.filesToUpdate?.join(', ') || "None"}\n4. Temporal Shift: ${timeShiftNotice}\n5. Map Update Required: ${mapReq}\n\nProcess this action based on the technical plan. Ensure every new item, weapon, or entity is created with full technical details.
 
 CRITICAL REMINDERS:
 1. You MUST fulfill Every file creation/update listed in the plan above.
 2. ${resolvedCheckDetails ? `Include this exactly: ${resolvedCheckDetails}` : ""}
-3. MAP UPDATE: Update CurrentMap.json.
+3. MAP UPDATE: Fully update CurrentMap.json. 
+   - CRITICAL: Do NOT omit pages for players who did not take this turn. If players are separated, return ALL pages in the "pages" array.
+   - Every entity, NPC, obstacle, and player within the scale bounds of each page MUST be plotted with valid (x, y) coordinates and facing angles.
 4. WEAPONS: Use ITEM & WEAPON TECHNICAL SCHEMA for any equipment created.
 5. STATS: Use MATH FORMULAS ONLY for stats.`;
 
@@ -598,11 +654,11 @@ CRITICAL REMINDERS:
           }
 
           for (const other of players) {
-            if (other.username === username) continue;
+            if (other.username?.toLowerCase() === username?.toLowerCase()) continue;
             const ox = Number(other.x) || 0;
             const oy = Number(other.y) || 0;
             const dist = Math.sqrt((px - ox) ** 2 + (py - oy) ** 2);
-            distLines.push(`  → Player ${other.username}: ${dist.toFixed(1)}m [at (${ox.toFixed(1)}, ${oy.toFixed(1)})]`);
+            distLines.push(`  → Player ${other.username}: ${dist.toFixed(1)}m away on [${pageLabel}] at (${ox.toFixed(1)}, ${oy.toFixed(1)})`);
           }
 
           lines.push(`${pageLabel} at (${px.toFixed(1)}, ${py.toFixed(1)}), facing ${player.facing || 0}°:`);
@@ -655,7 +711,7 @@ CRITICAL REMINDERS:
    * Compares old vs new map state and corrects player positions if the AI
    * failed to move them appropriately toward any interactive entity.
    */
-  private enforceSpatialConsistency(oldMapRaw: string, username?: string) {
+private enforceSpatialConsistency(oldMapRaw: string, username?: string) {
     const newMapRaw = this.fs.read('CurrentMap.json');
     if (!newMapRaw || !oldMapRaw) return;
 
@@ -666,7 +722,6 @@ CRITICAL REMINDERS:
       const oldPages = oldMap.pages || (oldMap.areas ? [oldMap] : []);
       const newPages = newMap.pages || (newMap.areas ? [newMap] : []);
 
-      // Interactive area types — anything a player could physically engage with
       const interactiveTypes = new Set([
         'npc', 'treasure', 'loot', 'furniture', 'vehicle', 'terminal',
         'portal', 'tech', 'magic', 'obstacle', 'building'
@@ -674,9 +729,12 @@ CRITICAL REMINDERS:
 
       let modified = false;
 
-      for (let pi = 0; pi < newPages.length; pi++) {
-        const newPage = newPages[pi];
-        const oldPage = oldPages[pi];
+      for (const newPage of newPages) {
+        const oldPage = oldPages.find((p: any) => 
+          (p.name && newPage.name && p.name.toLowerCase() === newPage.name.toLowerCase()) ||
+          (p.id && newPage.id && p.id === newPage.id)
+        ) || oldPages[0];
+
         if (!newPage?.players || !oldPage?.players) continue;
 
         const areas = newPage.areas || [];
@@ -692,15 +750,12 @@ CRITICAL REMINDERS:
           const newX = Number(newPlayer.x) || 0;
           const newY = Number(newPlayer.y) || 0;
 
-          // If the AI already moved the player, trust the AI's calculation
           if (Math.abs(newX - oldX) > 0.1 || Math.abs(newY - oldY) > 0.1) continue;
 
-          // Player didn't move — find the closest interactive entity
           let closestTarget: { cx: number; cy: number } | null = null;
           let closestDist = Infinity;
 
           for (const area of areas) {
-            // Consider any interactive type, not just NPCs
             if (!interactiveTypes.has(area.type?.toLowerCase())) continue;
 
             const ax = Number(area.x) || 0;
@@ -717,18 +772,12 @@ CRITICAL REMINDERS:
             }
           }
 
-          // Determine the appropriate interaction range for this player
           const interactionRange = this.getInteractionRange(newPlayer.username) || 3;
 
-          // If the closest interactive entity is beyond their current interaction range,
-          // move the player toward it
           if (closestTarget && closestDist > interactionRange) {
             const moveSpeed = this.extractPlayerSpeed(newPlayer.username) || 1.5;
-            // Estimate time from WorldTime diff, or use a reasonable default
             const timeCost = this.estimateTimeCost() || 6;
             const maxMove = moveSpeed * timeCost;
-
-            // Stop at interaction range
             const moveDistance = Math.min(maxMove, Math.max(0, closestDist - (interactionRange * 0.8)));
 
             if (moveDistance > 0.5) {
@@ -736,13 +785,11 @@ CRITICAL REMINDERS:
               newPlayer.x = +(oldX + (closestTarget.cx - oldX) * ratio).toFixed(1);
               newPlayer.y = +(oldY + (closestTarget.cy - oldY) * ratio).toFixed(1);
 
-              // Update facing direction toward the target
               const facingRad = Math.atan2(
                 closestTarget.cy - newPlayer.y,
                 closestTarget.cx - newPlayer.x
               );
               newPlayer.facing = +(facingRad * 180 / Math.PI).toFixed(0);
-
               modified = true;
             }
           }
@@ -750,7 +797,7 @@ CRITICAL REMINDERS:
       }
 
       if (modified) {
-        const correctedJson = JSON.stringify(newMap.pages ? newMap : { pages: newPages });
+        const correctedJson = JSON.stringify(newMap.pages ? newMap : { pages: newPages }, null, 2);
         this.fs.write('CurrentMap.json', correctedJson);
         this.lastValidMap = correctedJson;
       }
@@ -1179,6 +1226,38 @@ CRITICAL REMINDERS:
         }
       }
 
+      // ==================== ADD MAP MERGE GUARD HERE ====================
+      if (data.files['CurrentMap.json'] && this.lastValidMap) {
+        try {
+          const rawIncoming = (data.files['CurrentMap.json'] as any)?.content ?? data.files['CurrentMap.json'];
+          const incomingStr = typeof rawIncoming === 'object' ? JSON.stringify(rawIncoming) : String(rawIncoming);
+          const newMap = JSON.parse(incomingStr);
+          const oldMap = JSON.parse(this.lastValidMap);
+
+          const oldPages = oldMap.pages || (oldMap.areas ? [oldMap] : []);
+          const newPages = newMap.pages || (newMap.areas ? [newMap] : []);
+
+          // Preserve pages that were present in oldMap but omitted by the AI
+          if (oldPages.length > 1 && newPages.length > 0) {
+            const returnedNames = new Set(newPages.map((p: any) => p.name?.toLowerCase()));
+            const missingPages = oldPages.filter((p: any) => !returnedNames.has(p.name?.toLowerCase()));
+
+            if (missingPages.length > 0) {
+              newMap.pages = [...newPages, ...missingPages];
+              const mergedJson = JSON.stringify(newMap);
+
+              if (typeof data.files['CurrentMap.json'] === 'object' && (data.files['CurrentMap.json'] as any).content !== undefined) {
+                (data.files['CurrentMap.json'] as any).content = mergedJson;
+              } else {
+                data.files['CurrentMap.json'] = mergedJson;
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Map merge guard failed", e);
+        }
+      }
+      
       for (const [filename, fileData] of Object.entries(data.files)) {
         if (fileData === null || (typeof fileData === 'object' && fileData.content === null)) {
           this.fs.delete(filename);
@@ -1209,56 +1288,84 @@ CRITICAL REMINDERS:
    * If the new content is invalid, attempts repair. If repair fails,
    * merges the old valid map data with any salvageable new data.
    */
-  private writeMapSafe(content: string) {
-    // Try direct parse
+/**
+   * Normalizes arbitrary AI map output structures into a standard { pages: [...] } schema.
+   * Handles top-level page wrappers, arrays of pages, and legacy single-map flat objects.
+   */
+  private normalizeMapStructure(parsed: any): { pages: any[] } {
+    if (!parsed || typeof parsed !== 'object') {
+      return { pages: [] };
+    }
+
+    // Case 1: Already wrapped in standard schema: { pages: [...] }
+    if (Array.isArray(parsed.pages)) {
+      return parsed;
+    }
+
+    // Case 2: AI returned a direct top-level array of page objects: [{ name: "...", areas: [...] }, ...]
+    if (Array.isArray(parsed)) {
+      return { pages: parsed };
+    }
+
+    // Case 3: Flat single-page map object: { name?: "...", areas: [...], players: [...] }
+    return { pages: [parsed] };
+  }
+
+  /**
+   * Safely writes CurrentMap.json by validating it is proper JSON first.
+   * Enforces structural schema normalization to prevent nested or corrupt arrays.
+   * Attempts sequential fallback: direct parse -> repairJSON -> lastValidMap -> sanitizeJSON.
+   */
+  private writeMapSafe(content: string): void {
+    // 1. Direct parse attempt with normalization
     try {
       const parsed = JSON.parse(content);
-      const normalized = JSON.stringify(parsed);
+      const normalizedObj = this.normalizeMapStructure(parsed);
+      const normalized = JSON.stringify(normalizedObj, null, 2);
       this.fs.write('CurrentMap.json', normalized);
       this.lastValidMap = normalized;
       return;
     } catch (e) {
-      // Content is invalid JSON, try to repair
+      // Direct parse failed, fall through to repair
     }
 
-    // Attempt repair
+    // 2. Syntax auto-repair attempt
     const repaired = this.repairJSON(content);
     if (repaired) {
       try {
         const parsed = JSON.parse(repaired);
-        const normalized = JSON.stringify(parsed);
+        const normalizedObj = this.normalizeMapStructure(parsed);
+        const normalized = JSON.stringify(normalizedObj, null, 2);
         this.fs.write('CurrentMap.json', normalized);
         this.lastValidMap = normalized;
-        console.warn('CurrentMap.json required JSON repair — repaired successfully');
+        console.warn('CurrentMap.json required JSON repair — repaired and normalized successfully');
         return;
       } catch (e) {
-        // Repair wasn't enough
+        // Repair wasn't sufficient, fall through
       }
     }
 
-    // If we have a last valid map, try to merge or just keep it
+    // 3. Fallback to last known good map state
     if (this.lastValidMap) {
       console.warn('CurrentMap.json had malformed JSON — falling back to last valid map');
-      // Don't overwrite — the filesystem still has the last valid map
-      // (or we can re-write the backup to be safe)
       this.fs.write('CurrentMap.json', this.lastValidMap);
-    } else {
-      // Last resort: try the sanitizeJSON path
-      try {
-        const sanitized = this.sanitizeJSON(content);
-        const parsed = JSON.parse(sanitized);
-        const normalized = JSON.stringify(parsed);
-        this.fs.write('CurrentMap.json', normalized);
-        this.lastValidMap = normalized;
-        console.warn('CurrentMap.json required sanitization — recovered');
-        return;
-      } catch (e) {
-        console.error('CurrentMap.json is completely unrecoverable — discarding corrupt update');
-        // Don't write anything — leave whatever was there before
-      }
+      return;
+    }
+
+    // 4. Last resort: aggressive string sanitization
+    try {
+      const sanitized = this.sanitizeJSON(content);
+      const parsed = JSON.parse(sanitized);
+      const normalizedObj = this.normalizeMapStructure(parsed);
+      const normalized = JSON.stringify(normalizedObj, null, 2);
+      this.fs.write('CurrentMap.json', normalized);
+      this.lastValidMap = normalized;
+      console.warn('CurrentMap.json required sanitization — recovered and normalized successfully');
+      return;
+    } catch (e) {
+      console.error('CurrentMap.json is completely unrecoverable — discarding corrupt update');
     }
   }
-
 
   private getWorldContextForAI(username?: string, action?: string): string {
     const files = this.getRelevantFiles(username, action);
