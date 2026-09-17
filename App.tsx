@@ -11,10 +11,26 @@ import MainMenu from './components/MainMenu';
 import { MultiplayerService } from './services/multiplayer';
 import { SuggestionGenerator } from './services/suggestionGenerator';
 
-
 // Instantiate services outside component to persist across re-renders
 const fileSystem = new FileSystem();
 const aiEngine = new AIEngine(fileSystem);
+
+/**
+ * Extracts a display-ready timestamp from WorldTime.txt content,
+ * supporting both the temporal displacement schema and legacy flat timestamps.
+ */
+function parseActiveWorldTime(rawTime: string | null): string {
+  if (!rawTime) return '';
+  const activeBlockMatch = rawTime.match(/\[CURRENT ACTIVE TIME\][\s\S]*?Timestamp:\s*([^\n\r]+)/i);
+  if (activeBlockMatch && activeBlockMatch[1]) {
+    return activeBlockMatch[1].trim();
+  }
+  const fallbackMatch = rawTime.match(/\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?\s*-\s*[A-Za-z]+\s+\d{1,2},\s*\d{4}/i);
+  if (fallbackMatch) {
+    return fallbackMatch[0].trim();
+  }
+  return rawTime.trim().split('\n')[0] || '';
+}
 
 function App() {
   const [narrative, setNarrative] = useState<NarrativeEntry[]>(() => {
@@ -65,7 +81,6 @@ function App() {
   const isHost = roomState?.hostUsername === username;
   const isMyTurnReady = roomState?.players?.find((p: any) => p.username === username)?.isReady;
 
-
   // Persist narrative and updates
   useEffect(() => {
     if (gameMode === 'singleplayer') {
@@ -79,7 +94,6 @@ function App() {
     }
   }, [updates, gameMode]);
 
-
   useEffect(() => {
     localStorage.setItem('aimud_autoRecommendationsEnabled', JSON.stringify(autoRecommendationsEnabled));
   }, [autoRecommendationsEnabled]);
@@ -89,11 +103,7 @@ function App() {
     setFiles(fileSystem.list());
     setSyncCount(prev => prev + 1);
     const timeContent = fileSystem.read('WorldTime.txt');
-    if (timeContent) {
-      setWorldTime(timeContent);
-    } else {
-      setWorldTime('');
-    }
+    setWorldTime(parseActiveWorldTime(timeContent));
   };
 
   const initMultiplayerService = () => {
@@ -110,18 +120,20 @@ function App() {
 
         // Check if we need to show character creation
         const myName = localStorage.getItem('aimud_username');
-        const me = state.players.find((p: any) => p.username.toLowerCase() === myName?.toLowerCase());
+        const me = state.players?.find((p: any) => p.username?.toLowerCase() === myName?.toLowerCase());
         const myUsername = me?.username?.toLowerCase();
 
-        // Find if any file ends with -username.txt or similar variations
+        // Find if any file matches CharacterName-username.txt
         const myCharacterFileExists = Object.keys(state.fileSystemState?.files || {}).some(f => {
           const lowerF = f.toLowerCase();
-          return (myUsername && (
-            lowerF.endsWith(`-${myUsername}.txt`) ||
-            lowerF.endsWith(`_${myUsername}.txt`) ||
-            lowerF.endsWith(` ${myUsername}.txt`) ||
-            lowerF.replace(/\.txt$/, '').trim().endsWith(myUsername)
-          ));
+          return (
+            myUsername && (
+              lowerF.endsWith(`-${myUsername}.txt`) ||
+              lowerF.endsWith(`_${myUsername}.txt`) ||
+              lowerF.endsWith(` ${myUsername}.txt`) ||
+              lowerF.replace(/\.txt$/, '').trim().endsWith(myUsername)
+            )
+          );
         });
 
         if (state.gameState !== 'waiting_for_world' && me && !myCharacterFileExists) {
@@ -146,8 +158,8 @@ function App() {
 
             const newNarrative = [
               ...(roomStateRef.current?.narrative || []),
-              { id: Date.now().toString() + 'user', text: formattedPlayersActions, type: 'user' },
-              { id: Date.now().toString() + 'ai', text: result.narrative, type: 'ai' }
+              { id: Date.now().toString() + 'user', text: formattedPlayersActions, type: 'user' as const },
+              { id: Date.now().toString() + 'ai', text: result.narrative || '', type: 'ai' as const }
             ];
             const safeUpdates = Array.isArray(result.updates) ? result.updates : [];
             const newUpdates = [...safeUpdates, ...(roomStateRef.current?.updates || [])].slice(0, 50);
@@ -158,7 +170,7 @@ function App() {
               updates: newUpdates,
               recommendations: result.recommendations || [],
               gameState: 'playing',
-              worldTime: fileSystem.read('WorldTime.txt') || '',
+              worldTime: parseActiveWorldTime(fileSystem.read('WorldTime.txt')),
               turnProcessed: true
             });
           }
@@ -174,7 +186,7 @@ function App() {
           await aiEngine.processAction(prompt);
           ms.syncState({
             fileSystemState: fileSystem.exportState(),
-            worldTime: fileSystem.read('WorldTime.txt') || ''
+            worldTime: parseActiveWorldTime(fileSystem.read('WorldTime.txt'))
           });
         } finally {
           updateProcessing(-1);
@@ -213,7 +225,7 @@ function App() {
       setGameMode('multiplayer');
       setShowMultiplayerModal(null);
     } catch (err: any) {
-      alert(err);
+      alert(err.message || String(err));
     }
   };
 
@@ -250,13 +262,11 @@ function App() {
         setGameMode('singleplayer');
       }
     }
-    // Clear recommendations on mode switch if not initialized to force fresh ones for the new mode
+
     if (!isInitialized || (gameMode === 'multiplayer' && roomState?.gameState === 'waiting_for_world')) {
       setRecommendations([]);
     }
   }, [gameMode, isInitialized, roomState?.gameState]);
-
-  // Removed handleStartSingleplayer as we default to it
 
   const handleHostGame = async (hostUsername: string) => {
     setUsername(hostUsername);
@@ -316,7 +326,6 @@ function App() {
           result = await aiEngine.initialize(text, username || 'Player');
           setIsInitialized(true);
         } else {
-          // Capture map screenshot for spatial context
           const mapScreenshot = await mapPanelRef.current?.captureScreenshot() || undefined;
           result = await aiEngine.processAction(text, username || 'Player', mapScreenshot);
         }
@@ -347,13 +356,13 @@ function App() {
         // Host initializing world
         updateProcessing(1);
         const userActionId = Date.now().toString();
-        const newNarrative = [...narrative, { id: userActionId, text: text, type: 'user' }];
+        const newNarrative = [...narrative, { id: userActionId, text: text, type: 'user' as const }];
         setNarrative(newNarrative);
 
         try {
           const result = await aiEngine.initialize(text);
           if (result) {
-            const finalNarrative = [...newNarrative, { id: Date.now().toString() + 'ai', text: result.narrative || '', type: 'ai' }];
+            const finalNarrative = [...newNarrative, { id: Date.now().toString() + 'ai', text: result.narrative || '', type: 'ai' as const }];
             if (result.recommendations && Array.isArray(result.recommendations)) {
               setRecommendations(result.recommendations);
             } else {
@@ -366,7 +375,7 @@ function App() {
               updates: safeUpdates,
               recommendations: result.recommendations || [],
               gameState: 'character_creation',
-              worldTime: fileSystem.read('WorldTime.txt') || ''
+              worldTime: parseActiveWorldTime(fileSystem.read('WorldTime.txt'))
             });
           }
         } finally {
@@ -394,6 +403,7 @@ function App() {
       }
     }
   }, [gameMode, isInitialized, roomState?.gameState, isHost, autoRecommendationsEnabled, showCharacterCreation, recommendations.length]);
+
   const handleReferenceClick = (ref: string) => {
     const filename = fileSystem.findFileByReference(ref);
     if (filename) {
@@ -498,7 +508,6 @@ function App() {
         username={username}
         onKickPlayer={(user) => {
           if (multiplayerService) {
-            // Find and delete the character file
             const userLower = user.toLowerCase();
             const charFile = fileSystem.list().find(f => f.toLowerCase().endsWith(`-${userLower}.txt`));
 
@@ -511,7 +520,7 @@ function App() {
               narrative: roomState?.narrative || [],
               updates: roomState?.updates || [],
               gameState: roomState?.gameState || 'playing',
-              worldTime: fileSystem.read('WorldTime.txt') || ''
+              worldTime: parseActiveWorldTime(fileSystem.read('WorldTime.txt'))
             });
             multiplayerService.kickPlayer(user);
           }
@@ -543,7 +552,7 @@ function App() {
           username={username}
         />
 
-        {/* Floating Status Updates (Bottom Right) */}
+        {/* Floating Status Updates */}
         {!gameOver && updates.length > 0 && (
           <div className="absolute bottom-24 right-4 z-20 flex flex-col gap-1 items-end pointer-events-none">
             {updates.slice(0, 5).map((u, i) => (
@@ -575,7 +584,6 @@ function App() {
             (gameMode === 'multiplayer' && (roomState?.gameState === 'playing' || (roomState?.gameState === 'waiting_for_world' && isHost)))
           )) ? recommendations : []}
         />
-
       </div>
 
       <Modal
