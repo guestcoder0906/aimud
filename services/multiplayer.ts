@@ -12,7 +12,7 @@ export class MultiplayerService {
   private fileSystem: FileSystem;
   private onStateUpdate: (state: any) => void;
   private onExecuteTurn: (inputs: Record<string, string>) => void;
-  private onHostCreateCharacter: (data: { username: string, description: string }) => void;
+  private onHostCreateCharacter: (data: { username: string; description: string }) => void;
   private onKicked: () => void;
   private onAdventureDeleted: () => void;
 
@@ -20,7 +20,7 @@ export class MultiplayerService {
     fileSystem: FileSystem,
     onStateUpdate: (state: any) => void,
     onExecuteTurn: (inputs: Record<string, string>) => void,
-    onHostCreateCharacter: (data: { username: string, description: string }) => void,
+    onHostCreateCharacter: (data: { username: string; description: string }) => void,
     onKicked: () => void,
     onAdventureDeleted: () => void
   ) {
@@ -76,7 +76,6 @@ export class MultiplayerService {
     }
 
     await this.setupChannel(roomId, username, true);
-    // Emit initial
     this.onStateUpdate(initialState);
     return roomId;
   }
@@ -93,15 +92,13 @@ export class MultiplayerService {
     }
 
     const state = room.state;
-    // We no longer update DB here. The client just sets up its channel and presence.
-    // The Host's presence sync listener will detect the new user and add them securely to the DB.
-
     this.roomId = roomId;
     this.currentUsername = username;
 
     await this.setupChannel(roomId, username, false);
-
-    this.fileSystem.importState(state.fileSystemState);
+    if (state.fileSystemState) {
+      this.fileSystem.importState(state.fileSystemState);
+    }
     return state;
   }
 
@@ -120,15 +117,14 @@ export class MultiplayerService {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (payload: any) => {
         const newState = payload.new.state;
 
-        // The host locally computes files via aiEngine, so importing from DB would overwrite concurrent local fs changes with older echos.
-        if (this.currentUsername !== newState.hostUsername) {
+        // Non-host players sync files strictly from DB updates
+        if (this.currentUsername !== newState.hostUsername && newState.fileSystemState) {
           this.fileSystem.importState(newState.fileSystemState);
         }
 
         this.onStateUpdate(newState);
       })
       .on('broadcast', { event: 'submit_action' }, (payload: any) => {
-        // Host intercepts actions and writes to DB
         if (this.currentUsername === payload.payload.host) {
           this.handlePlayerActionAsHost(payload.payload.username, payload.payload.action);
         }
@@ -154,20 +150,17 @@ export class MultiplayerService {
         this.onAdventureDeleted();
       });
 
-    // Handle Presence to mark players active/inactive automatically
     this.channel.on('presence', { event: 'sync' }, () => {
       const presenceState = this.channel?.presenceState() || {};
       const activeUsernames = Object.keys(presenceState);
 
       if (this.currentUsername) {
-        // Enqueue host's presence reconciliation to prevent race conditions with syncState
         this.syncQueue = this.syncQueue.then(async () => {
           const { data } = await this.supabase.from('rooms').select('state, host_username').eq('id', roomId).single();
           if (data && data.host_username === this.currentUsername) {
             const state = data.state;
             let changed = false;
 
-            // Mark existing as active/inactive
             state.players.forEach((p: any) => {
               const isActive = activeUsernames.some(u => u.toLowerCase() === p.username.toLowerCase());
               if (p.status !== (isActive ? 'active' : 'inactive')) {
@@ -176,7 +169,6 @@ export class MultiplayerService {
               }
             });
 
-            // Add newly joined players
             activeUsernames.forEach((u: string) => {
               if (!state.players.find((p: any) => p.username.toLowerCase() === u.toLowerCase())) {
                 state.players.push({ username: u, status: 'active', isReady: false, hasCharacter: false });
@@ -213,7 +205,6 @@ export class MultiplayerService {
   async submitAction(action: string) {
     if (!this.roomId || !this.channel) return;
 
-    // Fetch host dynamically from DB to avoid staleness
     const { data } = await this.supabase.from('rooms').select('host_username').eq('id', this.roomId).single();
     if (data) {
       if (this.currentUsername === data.host_username) {
@@ -228,7 +219,6 @@ export class MultiplayerService {
     }
   }
 
-  // Host only
   private async handlePlayerActionAsHost(username: string, action: string) {
     if (!this.roomId) return;
     this.syncQueue = this.syncQueue.then(async () => {
@@ -236,7 +226,7 @@ export class MultiplayerService {
       if (data) {
         const state = data.state;
         state.pendingInputs[username] = action;
-        const player = state.players.find((p: any) => p.username === username);
+        const player = state.players.find((p: any) => p.username.toLowerCase() === username.toLowerCase());
         if (player) player.isReady = true;
 
         await this.supabase.from('rooms').update({ state }).eq('id', this.roomId);
@@ -246,17 +236,13 @@ export class MultiplayerService {
   }
 
   private checkTurnForHost(state: any) {
-    // If we're waiting for characters, see if everyone active has one now
     if (state.gameState === 'character_creation') {
       const activePlayers = state.players.filter((p: any) => p.status === 'active');
       const allHaveCharacters = activePlayers.length > 0 && activePlayers.every((p: any) => p.hasCharacter);
 
       if (allHaveCharacters) {
         state.gameState = 'playing';
-        // Need to broadcast this state change down
-        this.supabase.from('rooms').update({ state }).eq('id', this.roomId).then(() => {
-          // State updated to playing seamlessly
-        });
+        this.supabase.from('rooms').update({ state }).eq('id', this.roomId).then(() => {});
       }
       return;
     }
@@ -264,7 +250,6 @@ export class MultiplayerService {
     if (state.gameState !== 'playing') return;
     const activePlayers = state.players.filter((p: any) => p.status === 'active' && p.hasCharacter);
     if (activePlayers.length > 0 && activePlayers.every((p: any) => p.isReady)) {
-      // Execute turn directly on Host
       this.onExecuteTurn(state.pendingInputs);
 
       this.channel?.send({
@@ -291,6 +276,29 @@ export class MultiplayerService {
     }
   }
 
+  /**
+   * Extracts the active time string safely regardless of whether WorldTime.txt
+   * is using the legacy flat format or the temporal displacement schema.
+   */
+  private parseActiveWorldTime(files: Record<string, string>): string {
+    const rawTime = files['WorldTime.txt'];
+    if (!rawTime) return '';
+
+    // Temporal Displacement Schema: extract timestamp under [CURRENT ACTIVE TIME]
+    const activeBlockMatch = rawTime.match(/\[CURRENT ACTIVE TIME\][\s\S]*?Timestamp:\s*([^\n\r]+)/i);
+    if (activeBlockMatch && activeBlockMatch[1]) {
+      return activeBlockMatch[1].trim();
+    }
+
+    // Fallback: match standard timestamp string pattern
+    const fallbackMatch = rawTime.match(/\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?\s*-\s*[A-Za-z]+\s+\d{1,2},\s*\d{4}/i);
+    if (fallbackMatch) {
+      return fallbackMatch[0].trim();
+    }
+
+    return rawTime.trim().split('\n')[0] || '';
+  }
+
   async syncState(partialState: any) {
     return new Promise<void>((resolve) => {
       this.syncQueue = this.syncQueue.then(async () => {
@@ -301,27 +309,41 @@ export class MultiplayerService {
 
         const state = { ...data.state, ...partialState };
 
-        // Update hasCharacter based on file existence
+        // Guarantee fileSystemState matches current filesystem exports if not explicitly passed
+        if (!partialState.fileSystemState) {
+          state.fileSystemState = this.fileSystem.exportState();
+        }
+
+        // Synchronize dynamic active world time into global state
+        if (state.fileSystemState?.files) {
+          const activeTime = this.parseActiveWorldTime(state.fileSystemState.files);
+          if (activeTime) {
+            state.worldTime = activeTime;
+          }
+        }
+
+        // Update hasCharacter based on exact naming convention format: CharacterName-USERNAME.txt
         if (state.players && state.fileSystemState?.files) {
+          const fileKeys = Object.keys(state.fileSystemState.files);
           state.players.forEach((p: any) => {
             const uLower = p.username.toLowerCase();
-            p.hasCharacter = Object.keys(state.fileSystemState.files).some(f => {
+            p.hasCharacter = fileKeys.some(f => {
               const lowerF = f.toLowerCase();
-              return lowerF.endsWith(`-${uLower}.txt`) ||
+              return (
+                lowerF.endsWith(`-${uLower}.txt`) ||
                 lowerF.endsWith(`_${uLower}.txt`) ||
-                lowerF.endsWith(` ${uLower}.txt`) ||
-                lowerF.replace(/\.txt$/, '').trim().endsWith(uLower);
+                lowerF.endsWith(` ${uLower}.txt`)
+              );
             });
           });
         }
 
         if (state.turnProcessed) {
-          if (state.players) state.players.forEach((p: any) => p.isReady = false);
+          if (state.players) state.players.forEach((p: any) => (p.isReady = false));
           state.pendingInputs = {};
-          state.turnProcessed = false; // reset the flag
+          state.turnProcessed = false;
         }
 
-        // Try to auto-start if ready
         if (state.gameState === 'character_creation' && state.players) {
           const activePlayers = state.players.filter((p: any) => p.status === 'active');
           const allHaveCharacters = activePlayers.length > 0 && activePlayers.every((p: any) => p.hasCharacter);
@@ -341,7 +363,6 @@ export class MultiplayerService {
     if (!this.roomId) return;
     const { data } = await this.supabase.from('rooms').select('state').eq('id', this.roomId).single();
     if (data && this.channel) {
-      // Execute directly on Host
       this.onExecuteTurn(data.state.pendingInputs);
 
       this.channel.send({
@@ -370,4 +391,3 @@ export class MultiplayerService {
     this.leaveRoom();
   }
 }
-
